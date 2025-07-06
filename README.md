@@ -1,3 +1,3 @@
-# pdf monster
+# pdf koala
 
-![alt text](pdf-monster.jpg)
+![alt text](pdf-koala.png)
