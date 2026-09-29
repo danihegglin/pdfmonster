@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 18 240 226" width="240" height="226">
+  <!-- Munch, the pdfmonster. Eats crooked pages, spits out straight ones. -->
+  <ellipse cx="124" cy="226" rx="78" ry="10" fill="#000" opacity="0.12"/>
+
+  <!-- feet -->
+  <ellipse cx="92" cy="214" rx="22" ry="12" fill="#5b4bd6" stroke="#2b2140" stroke-width="5"/>
+  <ellipse cx="156" cy="214" rx="22" ry="12" fill="#5b4bd6" stroke="#2b2140" stroke-width="5"/>
+
+  <!-- horns -->
+  <path d="M82 84 C74 62 78 42 94 30 C96 50 102 64 112 72 Z" fill="#ffd166" stroke="#2b2140" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M166 84 C174 62 170 42 154 30 C152 50 146 64 136 72 Z" fill="#ffd166" stroke="#2b2140" stroke-width="5" stroke-linejoin="round"/>
+
+  <!-- body -->
+  <path d="M48 196 C34 146 40 66 124 62 C208 66 214 146 200 196 C186 216 62 216 48 196 Z" fill="#7c6cf2" stroke="#2b2140" stroke-width="5" stroke-linejoin="round"/>
+  <!-- fuzzy tuft -->
+  <path d="M110 64 C112 52 120 50 124 58 C128 48 138 50 138 64" fill="#7c6cf2" stroke="#2b2140" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- belly -->
+  <ellipse cx="124" cy="166" rx="50" ry="36" fill="#a99ef8"/>
+  <!-- spots -->
+  <circle cx="68" cy="128" r="6" fill="#6353d8"/>
+  <circle cx="60" cy="150" r="4" fill="#6353d8"/>
+  <circle cx="184" cy="120" r="5" fill="#6353d8"/>
+
+  <!-- the one big eye -->
+  <circle cx="124" cy="110" r="32" fill="#fff" stroke="#2b2140" stroke-width="5"/>
+  <circle cx="128" cy="114" r="17" fill="#2b2140"/>
+  <circle cx="135" cy="106" r="6.5" fill="#fff"/>
+  <circle cx="122" cy="121" r="3" fill="#fff"/>
+
+  <!-- cheeks -->
+  <ellipse cx="80" cy="150" rx="11" ry="7" fill="#ff8fab" opacity="0.75"/>
+  <ellipse cx="168" cy="150" rx="11" ry="7" fill="#ff8fab" opacity="0.75"/>
+
+  <!-- mouth + fangs -->
+  <path d="M100 152 Q124 176 148 152" fill="#2b2140" stroke="#2b2140" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M109 157 L114 167 L119 160 Z" fill="#fff"/>
+  <path d="M139 157 L134 167 L129 160 Z" fill="#fff"/>
+
+  <!-- a perfectly straight page, freshly fixed -->
+  <g>
+    <rect x="178" y="138" width="54" height="68" rx="5" fill="#fff" stroke="#2b2140" stroke-width="5"/>
+    <path d="M188 154 H222 M188 166 H222 M188 178 H216 M188 190 H208" stroke="#7c6cf2" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <!-- arm holding it -->
+  <path d="M186 172 C196 170 200 178 194 184 C188 190 178 186 180 178" fill="#7c6cf2" stroke="#2b2140" stroke-width="5" stroke-linejoin="round"/>
+  <!-- other arm waving -->
+  <path d="M52 150 C34 142 24 128 30 118 C36 110 46 118 50 128" fill="#7c6cf2" stroke="#2b2140" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- sparkles -->
+  <path d="M226 110 L230 120 L240 124 L230 128 L226 138 L222 128 L212 124 L222 120 Z" fill="#ffd166" stroke="#2b2140" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M28 70 L31 77 L38 80 L31 83 L28 90 L25 83 L18 80 L25 77 Z" fill="#6ee7b7" stroke="#2b2140" stroke-width="3" stroke-linejoin="round"/>
+</svg>

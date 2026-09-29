@@ -1,0 +1,20 @@
+[package]
+name = "pdfmonster"
+version = "0.1.0"
+edition = "2024"
+description = "A tiny, very fast monster that straightens crooked PDF scans."
+license = "GPL-3.0-or-later"
+
+[dependencies]
+anyhow = "1"
+gpui = { version = "0.2.2", features = ["runtime_shaders"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+lopdf = "0.38"
+rayon = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.dev.package."*"]
+opt-level = 2
