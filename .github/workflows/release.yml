@@ -2,11 +2,22 @@ name: Release
 
 # Builds installable packages for every platform.
 #   - Push a tag like `v0.1.0` to build everything and publish a GitHub release.
-#   - Run it manually (workflow_dispatch) to build the packages as workflow artifacts only.
+#   - Run it manually, or open a PR that touches packaging, to build the packages as
+#     workflow artifacts only.
 on:
   push:
     tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "packaging/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
   workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
