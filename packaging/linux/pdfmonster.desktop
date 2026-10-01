@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=pdfmonster
+GenericName=PDF Scan Straightener
+Comment=Straightens crooked pages in scanned PDFs
+Exec=pdfmonster %f
+Icon=pdfmonster
+Terminal=false
+Categories=Office;Graphics;Scanning;
+MimeType=application/pdf;
+Keywords=pdf;scan;deskew;straighten;rotate;
+StartupWMClass=pdfmonster

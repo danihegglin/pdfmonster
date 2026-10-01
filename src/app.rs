@@ -75,6 +75,7 @@ pub fn run(initial: Option<PathBuf>) {
                 title: Some("pdfmonster".into()),
                 ..Default::default()
             }),
+            app_id: Some("pdfmonster".into()),
             ..Default::default()
         };
         cx.open_window(options, |window, cx| {

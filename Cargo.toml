@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 description = "A tiny, very fast monster that straightens crooked PDF scans."
 license = "GPL-3.0-or-later"
+repository = "https://github.com/danihegglin/pdfmonster"
+readme = "README.md"
 
 [dependencies]
 anyhow = "1"
@@ -18,3 +20,27 @@ codegen-units = 1
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# Linux packages. Icons under target/icons are rendered from packaging/pdfmonster.svg in CI.
+[package.metadata.deb]
+maintainer = "Dani Hegglin"
+section = "graphics"
+depends = "$auto, libvulkan1"
+extended-description = "Feed it crooked scans. It spits out straight ones. A native, GPU-drawn desktop app and CLI that straightens skewed pages in scanned PDFs losslessly."
+assets = [
+    ["target/release/pdfmonster", "usr/bin/", "755"],
+    ["packaging/linux/pdfmonster.desktop", "usr/share/applications/", "644"],
+    ["packaging/pdfmonster.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+    ["target/icons/256x256/pdfmonster.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
+    ["README.md", "usr/share/doc/pdfmonster/", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/pdfmonster", dest = "/usr/bin/pdfmonster", mode = "755" },
+    { source = "packaging/linux/pdfmonster.desktop", dest = "/usr/share/applications/pdfmonster.desktop", mode = "644" },
+    { source = "packaging/pdfmonster.svg", dest = "/usr/share/icons/hicolor/scalable/apps/pdfmonster.svg", mode = "644" },
+    { source = "target/icons/256x256/pdfmonster.png", dest = "/usr/share/icons/hicolor/256x256/apps/pdfmonster.png", mode = "644" },
+    { source = "README.md", dest = "/usr/share/doc/pdfmonster/README.md", mode = "644", doc = true },
+    { source = "LICENSE", dest = "/usr/share/licenses/pdfmonster/LICENSE", mode = "644" },
+]

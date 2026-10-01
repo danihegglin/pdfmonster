@@ -60,12 +60,31 @@ straightened 8/8 pages → scan.aligned.pdf in 51 ms
 
 You need a recent stable Rust (edition 2024). On macOS, gpui compiles its Metal shaders at
 runtime, so you don't need Xcode's Metal toolchain. On Linux, install the usual gpui dependencies
-(Vulkan, Wayland/X11 and xkbcommon headers).
+(Vulkan, Wayland/X11 and xkbcommon headers). On Debian/Ubuntu, `packaging/linux/install-deps.sh`
+installs them.
 
 ```sh
 cargo build --release
 cargo test
 ```
+
+## Downloads
+
+Every tagged release (`v*`) is built by GitHub Actions and attached to the
+[releases page](https://github.com/danihegglin/pdfmonster/releases):
+
+| Platform | Files |
+| --- | --- |
+| macOS (Apple silicon + Intel) | `.dmg`, `.app.zip`, CLI `.tar.gz` |
+| Windows (x86_64, ARM64) | `.zip` |
+| Debian, Ubuntu, Mint, Pop!\_OS | `.deb` (x86_64, aarch64) |
+| Fedora, openSUSE, RHEL | `.rpm` (x86_64, aarch64) |
+| Arch, Manjaro, EndeavourOS | `.pkg.tar.zst` (`sudo pacman -U …`) |
+| Any Linux | `.AppImage`, `.tar.gz` (x86_64, aarch64) |
+
+The macOS app is ad-hoc signed, not notarized: the first time, right-click it and choose **Open**.
+
+To cut a release, bump `version` in `Cargo.toml`, then `git tag v0.1.0 && git push --tags`.
 
 ## How it works
 
