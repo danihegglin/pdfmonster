@@ -1,0 +1,27 @@
+# Packages the prebuilt release binary. CI fills in pkgver and the tarball.
+# Maintainer: Dani Hegglin
+pkgname=pdfmonster-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="A tiny, very fast monster that straightens crooked PDF scans"
+arch=('x86_64')
+url="https://github.com/danihegglin/pdfmonster"
+license=('GPL-3.0-or-later')
+depends=('glibc' 'gcc-libs' 'fontconfig' 'freetype2' 'libxkbcommon' 'libxkbcommon-x11'
+         'libxcb' 'wayland' 'vulkan-icd-loader')
+optdepends=('vulkan-driver: GPU rendering')
+provides=('pdfmonster')
+conflicts=('pdfmonster')
+options=('!strip' '!debug')
+source=("pdfmonster-${pkgver}-linux-x86_64.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  cd "pdfmonster-${pkgver}-linux-x86_64"
+  install -Dm755 pdfmonster "$pkgdir/usr/bin/pdfmonster"
+  install -Dm644 pdfmonster.desktop "$pkgdir/usr/share/applications/pdfmonster.desktop"
+  install -Dm644 pdfmonster.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/pdfmonster.svg"
+  install -Dm644 pdfmonster.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/pdfmonster.png"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/pdfmonster/README.md"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/pdfmonster/LICENSE"
+}

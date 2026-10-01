@@ -1,0 +1,311 @@
+name: Release
+
+# Builds installable packages for every platform.
+#   - Push a tag like `v0.1.0` to build everything and publish a GitHub release.
+#   - Run it manually, or open a PR that touches packaging, to build the packages as
+#     workflow artifacts only.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "packaging/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: linux (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Build on the oldest supported Ubuntu so the binary runs on older glibc versions too.
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          ./packaging/linux/install-deps.sh
+          sudo apt-get install -y --no-install-recommends librsvg2-bin file desktop-file-utils
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb,cargo-generate-rpm
+
+      - name: Build
+        run: |
+          cargo build --release --locked
+          strip target/release/pdfmonster
+
+      - name: Prepare
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          desktop-file-validate packaging/linux/pdfmonster.desktop
+          for s in 16 32 48 64 128 256 512; do
+            mkdir -p "target/icons/${s}x${s}"
+            rsvg-convert -w "$s" -h "$s" packaging/pdfmonster.svg -o "target/icons/${s}x${s}/pdfmonster.png"
+          done
+          mkdir -p dist
+
+      - name: Tarball
+        run: |
+          NAME="pdfmonster-$VERSION-linux-${{ matrix.arch }}"
+          mkdir "$NAME"
+          cp target/release/pdfmonster packaging/linux/pdfmonster.desktop packaging/pdfmonster.svg README.md LICENSE "$NAME/"
+          cp target/icons/256x256/pdfmonster.png "$NAME/"
+          tar czf "dist/$NAME.tar.gz" "$NAME"
+
+      - name: Debian / Ubuntu package (.deb)
+        run: cargo deb --no-build --no-strip --output dist/
+
+      - name: Fedora / openSUSE / RHEL package (.rpm)
+        run: cargo generate-rpm --output dist/
+
+      - name: AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          LINUXDEPLOY_OUTPUT_VERSION: ${{ env.VERSION }}
+        run: |
+          curl -fsSL -o linuxdeploy \
+            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${{ matrix.arch }}.AppImage"
+          chmod +x linuxdeploy
+          ICONS=()
+          for s in 16 32 48 64 128 256 512; do ICONS+=(--icon-file "target/icons/${s}x${s}/pdfmonster.png"); done
+          ./linuxdeploy --appdir AppDir \
+            --executable target/release/pdfmonster \
+            --desktop-file packaging/linux/pdfmonster.desktop \
+            "${ICONS[@]}" \
+            --output appimage
+          mv pdfmonster-*.AppImage "dist/pdfmonster-$VERSION-linux-${{ matrix.arch }}.AppImage"
+
+      - name: Smoke test
+        run: |
+          ./target/release/pdfmonster --help
+          "./dist/pdfmonster-$VERSION-linux-${{ matrix.arch }}.AppImage" --appimage-extract-and-run --help
+          ls -lh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  arch:
+    name: arch linux (x86_64)
+    needs: linux
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x86_64
+          path: linux
+
+      - name: Build package
+        run: |
+          TARBALL=$(ls linux/pdfmonster-*-linux-x86_64.tar.gz)
+          VERSION=$(basename "$TARBALL" | sed -E 's/^pdfmonster-(.*)-linux-x86_64\.tar\.gz$/\1/')
+          useradd -m builder
+          mkdir -p /build dist
+          cp "$TARBALL" /build/
+          sed "s/@VERSION@/$VERSION/" packaging/arch/PKGBUILD > /build/PKGBUILD
+          chown -R builder /build
+          su builder -c "cd /build && makepkg --nodeps --noconfirm"
+          cp /build/*.pkg.tar.zst dist/
+          cp /build/PKGBUILD dist/PKGBUILD
+          pacman -Qip dist/*.pkg.tar.zst
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-x86_64
+          path: dist/*
+          if-no-files-found: error
+
+  macos:
+    name: macos (universal)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+
+      - name: Build
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          mkdir -p target/universal
+          lipo -create -output target/universal/pdfmonster \
+            target/aarch64-apple-darwin/release/pdfmonster \
+            target/x86_64-apple-darwin/release/pdfmonster
+          strip -x target/universal/pdfmonster
+          lipo -info target/universal/pdfmonster
+
+      - name: App bundle and disk image
+        run: |
+          brew install librsvg
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          mkdir -p dist
+
+          ICONSET=target/pdfmonster.iconset
+          mkdir -p "$ICONSET"
+          for s in 16 32 128 256 512; do
+            rsvg-convert -w "$s" -h "$s" packaging/pdfmonster.svg -o "$ICONSET/icon_${s}x${s}.png"
+            rsvg-convert -w "$((s * 2))" -h "$((s * 2))" packaging/pdfmonster.svg -o "$ICONSET/icon_${s}x${s}@2x.png"
+          done
+
+          APP=target/bundle/pdfmonster.app
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/universal/pdfmonster "$APP/Contents/MacOS/"
+          iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/pdfmonster.icns"
+          sed "s/@VERSION@/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
+          plutil -lint "$APP/Contents/Info.plist"
+          # Ad-hoc signature so the app launches on Apple silicon. Not notarized.
+          codesign --force --deep --sign - "$APP"
+
+          ditto -c -k --keepParent "$APP" "dist/pdfmonster-$VERSION-macos-universal.app.zip"
+
+          STAGE=target/dmg
+          mkdir -p "$STAGE"
+          cp -R "$APP" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname pdfmonster -srcfolder "$STAGE" -ov -format UDZO \
+            "dist/pdfmonster-$VERSION-macos-universal.dmg"
+
+          NAME="pdfmonster-$VERSION-macos-universal"
+          mkdir "$NAME"
+          cp target/universal/pdfmonster README.md LICENSE "$NAME/"
+          tar czf "dist/$NAME.tar.gz" "$NAME"
+
+      - name: Smoke test
+        run: |
+          target/bundle/pdfmonster.app/Contents/MacOS/pdfmonster --help
+          ls -lh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    name: windows (${{ matrix.arch }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-pc-windows-msvc
+          - arch: aarch64
+            target: aarch64-pc-windows-msvc
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      # gpui compiles its HLSL shaders with the Windows SDK's fxc.exe in release builds.
+      - name: Locate fxc.exe
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\fxc.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $fxc) { throw "fxc.exe not found" }
+          "GPUI_FXC_PATH=$($fxc.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Output "Using $($fxc.FullName)"
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          NAME="pdfmonster-$VERSION-windows-${{ matrix.arch }}"
+          mkdir -p dist "$NAME"
+          cp target/${{ matrix.target }}/release/pdfmonster.exe README.md LICENSE "$NAME/"
+          7z a "dist/$NAME.zip" "$NAME"
+
+      - name: Smoke test
+        if: matrix.arch == 'x86_64'
+        run: target/${{ matrix.target }}/release/pdfmonster.exe --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, arch, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches Cargo.toml version
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "${GITHUB_REF_NAME#v}" != "$VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $VERSION"
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
