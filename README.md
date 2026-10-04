@@ -84,7 +84,8 @@ Every tagged release (`v*`) is built by GitHub Actions and attached to the
 
 The macOS app is ad-hoc signed, not notarized: the first time, right-click it and choose **Open**.
 
-To cut a release, bump `version` in `Cargo.toml`, then `git tag v0.1.0 && git push --tags`.
+To cut a release, push a version tag: `git tag v0.2.0 && git push --tags`. The tag sets the
+version of every package.
 
 ## How it works
 

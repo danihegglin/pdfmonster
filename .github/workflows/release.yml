@@ -1,7 +1,8 @@
 name: Release
 
 # Builds installable packages for every platform.
-#   - Push a tag like `v0.1.0` to build everything and publish a GitHub release.
+#   - Push a tag like `v0.2.0` (or `v0.2`) to build everything and publish a GitHub release.
+#     The tag sets the version; Cargo.toml doesn't need bumping first.
 #   - Run it manually, or open a PR that touches packaging, to build the packages as
 #     workflow artifacts only.
 on:
@@ -42,6 +43,10 @@ jobs:
         run: |
           ./packaging/linux/install-deps.sh
           sudo apt-get install -y --no-install-recommends librsvg2-bin file desktop-file-utils
+
+      - name: Set version from tag
+        shell: bash
+        run: ./packaging/set-version.sh
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -151,6 +156,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set version from tag
+        shell: bash
+        run: ./packaging/set-version.sh
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
@@ -236,6 +245,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set version from tag
+        shell: bash
+        run: ./packaging/set-version.sh
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -283,16 +296,6 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Check tag matches Cargo.toml version
-        run: |
-          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          if [ "${GITHUB_REF_NAME#v}" != "$VERSION" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $VERSION"
-            exit 1
-          fi
-
       - uses: actions/download-artifact@v4
         with:
           path: dist
