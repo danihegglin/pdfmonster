@@ -87,7 +87,7 @@ impl Kind {
                 job: "Merges PDFs",
                 blurb: "Drop in a pile of files, drag them into order, get one tidy document.",
                 color: 0x21c18a,
-                ready: false,
+                ready: true,
                 body: Body::Tall,
                 eyes: 2,
                 mouth: Mouth::Stitch,

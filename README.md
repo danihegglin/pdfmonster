@@ -45,11 +45,20 @@ to the pack.
    Click a page to leave it alone.
 5. **Save aligned** (<kbd>⌘S</kbd>) writes `yourfile.aligned.pdf`.
 
+### Stitch: merging PDFs
+
+Open Stitch from the pack (or drop several PDFs on the home screen, or run
+`pdfmonster a.pdf b.pdf c.pdf`). Drag the files into order, or use the ↑ / ↓ buttons, then press
+**Stitch & save** (<kbd>⌘S</kbd>). Pages keep their size, rotation and content exactly; bookmarks
+and form fields of the inputs aren't carried over.
+
 ## Using the CLI
 
 ```sh
 pdfmonster fix scan.pdf                 # → scan.aligned.pdf
 pdfmonster fix scan.pdf -o straight.pdf
+pdfmonster stitch a.pdf b.pdf c.pdf     # → a.stitched.pdf
+pdfmonster stitch a.pdf b.pdf -o all.pdf
 ```
 
 ```

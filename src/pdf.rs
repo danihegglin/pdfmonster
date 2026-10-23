@@ -137,7 +137,7 @@ fn rotate_page(doc: &mut Document, page_id: ObjectId, degrees: f32) -> Result<()
 }
 
 /// Looks a page attribute up, following the page tree for inherited values.
-fn inherited<'a>(doc: &'a Document, page_id: ObjectId, key: &[u8]) -> Option<&'a Object> {
+pub(crate) fn inherited<'a>(doc: &'a Document, page_id: ObjectId, key: &[u8]) -> Option<&'a Object> {
     let mut dict = doc.get_dictionary(page_id).ok()?;
     for _ in 0..32 {
         if let Ok(value) = dict.get(key) {
