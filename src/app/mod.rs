@@ -2,6 +2,7 @@
 
 mod munch;
 mod pack;
+mod snip;
 mod stitch;
 
 use std::{
@@ -100,6 +101,7 @@ pub fn run(initial: Vec<PathBuf>) {
 enum Tool {
     Munch(Entity<munch::Munch>),
     Stitch(Entity<stitch::Stitch>),
+    Snip(Entity<snip::Snip>),
 }
 
 impl Tool {
@@ -107,6 +109,7 @@ impl Tool {
         match kind {
             Kind::Munch => Some(Tool::Munch(cx.new(munch::Munch::new))),
             Kind::Stitch => Some(Tool::Stitch(cx.new(stitch::Stitch::new))),
+            Kind::Snip => Some(Tool::Snip(cx.new(snip::Snip::new))),
             _ => None,
         }
     }
@@ -115,6 +118,7 @@ impl Tool {
         match self {
             Tool::Munch(_) => Kind::Munch,
             Tool::Stitch(_) => Kind::Stitch,
+            Tool::Snip(_) => Kind::Snip,
         }
     }
 
@@ -126,6 +130,11 @@ impl Tool {
                 }
             }),
             Tool::Stitch(view) => view.update(cx, |view, cx| view.add(paths, cx)),
+            Tool::Snip(view) => view.update(cx, |view, cx| {
+                if let Some(path) = paths.into_iter().next() {
+                    view.load(path, cx);
+                }
+            }),
         }
     }
 
@@ -133,6 +142,7 @@ impl Tool {
         match self {
             Tool::Munch(view) => window.focus(&view.read(cx).focus),
             Tool::Stitch(view) => window.focus(&view.read(cx).focus),
+            Tool::Snip(view) => window.focus(&view.read(cx).focus),
         }
     }
 
@@ -140,6 +150,7 @@ impl Tool {
         match self {
             Tool::Munch(view) => view.clone().into(),
             Tool::Stitch(view) => view.clone().into(),
+            Tool::Snip(view) => view.clone().into(),
         }
     }
 }
@@ -420,6 +431,19 @@ fn render_image(gray: &GrayImage) -> Arc<RenderImage> {
         image::Rgba([v, v, v, 255])
     });
     Arc::new(RenderImage::new(vec![Frame::new(rgba)]))
+}
+
+/// Like [`render_image`], for colour bitmaps.
+fn render_rgba(rgba: &RgbaImage) -> Arc<RenderImage> {
+    let mut bgra = rgba.clone();
+    for pixel in bgra.pixels_mut() {
+        pixel.0.swap(0, 2);
+    }
+    Arc::new(RenderImage::new(vec![Frame::new(bgra)]))
+}
+
+fn plural(n: usize) -> &'static str {
+    if n == 1 { "" } else { "s" }
 }
 
 fn is_pdf(path: &Path) -> bool {

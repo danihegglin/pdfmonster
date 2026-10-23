@@ -52,6 +52,13 @@ Open Stitch from the pack (or drop several PDFs on the home screen, or run
 **Stitch & save** (<kbd>⌘S</kbd>). Pages keep their size, rotation and content exactly; bookmarks
 and form fields of the inputs aren't carried over.
 
+### Snip: splitting and extracting pages
+
+Open a PDF in Snip and every page shows up as a thumbnail. Click pages to pick them (shift-click
+picks a range), then **Save N pages** (<kbd>⌘S</kbd>) writes just those into a new PDF. **Split
+into single pages** writes one file per page (or per picked page) into a folder. Everything that
+only the left-out pages used is removed from the new file.
+
 ## Using the CLI
 
 ```sh
@@ -59,6 +66,10 @@ pdfmonster fix scan.pdf                 # → scan.aligned.pdf
 pdfmonster fix scan.pdf -o straight.pdf
 pdfmonster stitch a.pdf b.pdf c.pdf     # → a.stitched.pdf
 pdfmonster stitch a.pdf b.pdf -o all.pdf
+pdfmonster snip scan.pdf 4-9            # → scan.p4-9.pdf
+pdfmonster snip scan.pdf 1-3 10-        # → scan.p1-3.pdf and scan.p10-12.pdf
+pdfmonster snip scan.pdf 3,1 -o two.pdf # pages 3 and 1, in that order
+pdfmonster snip scan.pdf --every 1      # one file per page
 ```
 
 ```

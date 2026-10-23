@@ -13,8 +13,8 @@ use gpui::{
 use lopdf::Document;
 
 use super::{
-    Open, Save, button, empty_state, file_name, is_pdf, pack::Kind, small_button, status_bar,
-    theme, toolbar,
+    Open, Save, button, empty_state, file_name, is_pdf, pack::Kind, plural, small_button,
+    status_bar, theme, toolbar,
 };
 use crate::{pdf, stitch};
 
@@ -305,8 +305,4 @@ impl Render for Stitch {
             .child(body)
             .child(status_bar(status, self.busy.is_some(), Some("esc: all monsters")))
     }
-}
-
-fn plural(n: usize) -> &'static str {
-    if n == 1 { "" } else { "s" }
 }

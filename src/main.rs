@@ -2,6 +2,8 @@ mod app;
 mod deskew;
 mod pages;
 mod pdf;
+mod render;
+mod snip;
 mod stitch;
 
 use std::{path::PathBuf, process::ExitCode, time::Instant};
@@ -17,6 +19,10 @@ USAGE:
     pdfmonster stitch <A.pdf> <B.pdf>… [-o OUT.pdf]
                                                merge PDFs in the order given
                                                (default OUT: A.stitched.pdf)
+    pdfmonster snip <IN.pdf> <PAGES>… [-o OUT.pdf]
+                                               keep only some pages, e.g. 4-9 or 1,3,10-
+                                               (one file per PAGES; default IN.p4-9.pdf)
+    pdfmonster snip <IN.pdf> --every N         split into files of N pages each
 ";
 
 fn main() -> ExitCode {
@@ -26,10 +32,11 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             ExitCode::SUCCESS
         }
-        Some(cmd @ ("fix" | "stitch")) => {
+        Some(cmd @ ("fix" | "stitch" | "snip")) => {
             let result = match cmd {
                 "fix" => fix(&args[1..]),
-                _ => stitch(&args[1..]),
+                "stitch" => stitch(&args[1..]),
+                _ => snip(&args[1..]),
             };
             match result {
                 Ok(()) => ExitCode::SUCCESS,
@@ -119,6 +126,64 @@ fn stitch(args: &[String]) -> anyhow::Result<()> {
         "stitched {} pages → {} in {} ms",
         counts.iter().sum::<usize>(),
         output.display(),
+        start.elapsed().as_millis()
+    );
+    Ok(())
+}
+
+fn snip(args: &[String]) -> anyhow::Result<()> {
+    let mut args = args.to_vec();
+    let every = match args.iter().position(|a| a == "--every") {
+        Some(i) => {
+            let n = args
+                .get(i + 1)
+                .and_then(|n| n.parse::<u32>().ok())
+                .filter(|&n| n > 0)
+                .ok_or_else(|| anyhow::anyhow!("--every needs a page count"))?;
+            args.drain(i..=i + 1);
+            Some(n)
+        }
+        None => None,
+    };
+    let (inputs, output) = inputs_and_output(&args)?;
+    let Some((input, specs)) = inputs.split_first() else {
+        anyhow::bail!("missing input file\n\n{USAGE}");
+    };
+    let start = Instant::now();
+    let doc = pdf::open(input)?;
+    let count = doc.get_pages().len() as u32;
+
+    let groups: Vec<Vec<u32>> = match every {
+        Some(n) => {
+            anyhow::ensure!(specs.is_empty(), "use either --every or page lists, not both");
+            snip::chunks(count, n)
+        }
+        None => {
+            anyhow::ensure!(!specs.is_empty(), "which pages? e.g. 4-9\n\n{USAGE}");
+            specs
+                .iter()
+                .map(|s| snip::parse_pages(&s.to_string_lossy(), count))
+                .collect::<anyhow::Result<_>>()?
+        }
+    };
+    anyhow::ensure!(
+        output.is_none() || groups.len() == 1,
+        "-o only works when writing a single file"
+    );
+    for group in &groups {
+        let out = match &output {
+            Some(out) => out.clone(),
+            None => snip::output_for(input, group),
+        };
+        snip::extract(&doc, group)?
+            .save(&out)
+            .map_err(|e| anyhow::anyhow!("could not write {}: {e}", out.display()))?;
+        println!("{:>5} page{} → {}", group.len(), if group.len() == 1 { " " } else { "s" }, out.display());
+    }
+    println!(
+        "snipped {} file{} from {count} pages in {} ms",
+        groups.len(),
+        if groups.len() == 1 { "" } else { "s" },
         start.elapsed().as_millis()
     );
     Ok(())

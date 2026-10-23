@@ -98,7 +98,7 @@ impl Kind {
                 job: "Splits & extracts pages",
                 blurb: "Need pages 4–9 and nothing else? Snip cuts out exactly that.",
                 color: 0xffb800,
-                ready: false,
+                ready: true,
                 body: Body::Ghost,
                 eyes: 3,
                 mouth: Mouth::Smirk,
