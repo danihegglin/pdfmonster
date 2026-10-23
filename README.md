@@ -34,6 +34,10 @@ cargo run --release              # opens the app
 cargo run --release -- scan.pdf  # opens the app with a file
 ```
 
+The app opens on the home screen with the whole pack. Click a monster to open it, or drop a PDF
+straight onto one to feed it. Dropping anywhere else feeds Munch. <kbd>Esc</kbd> takes you back
+to the pack.
+
 1. Drop a PDF on the window (or press <kbd>⌘O</kbd> / <kbd>Ctrl+O</kbd>).
 2. Every page shows up already straightened. Crooked pages have a purple outline and a `↻ +1.24°` badge.
 3. Press <kbd>Space</kbd> to flip between **before** and **after**.

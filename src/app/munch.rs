@@ -1,4 +1,4 @@
-//! The gpui front end: drop a PDF in, eyeball the fixes, save.
+//! Munch's screen: drop a PDF in, eyeball the fixes, save.
 
 use std::{
     path::{Path, PathBuf},
@@ -7,102 +7,27 @@ use std::{
 };
 
 use gpui::{
-    App, Application, Bounds, ClickEvent, Context, ExternalPaths, FocusHandle, FontWeight, Hsla,
-    Image, ImageFormat, KeyBinding, Menu, MenuItem, PathPromptOptions, RenderImage, SharedString,
-    Stateful, TitlebarOptions, Window, WindowBounds, WindowOptions, actions, div, img, prelude::*,
-    px, rgb, size,
+    ClickEvent, Context, ExternalPaths, FocusHandle, FontWeight, Hsla, Image, ImageFormat,
+    PathPromptOptions, RenderImage, SharedString, Window, div, img, prelude::*, px, rgb,
 };
-use image::{Frame, GrayImage, RgbaImage, imageops};
+use image::{GrayImage, imageops};
 use lopdf::{Document, ObjectId};
 use rayon::prelude::*;
 
+use super::{
+    Open, Save, ToggleOriginal, button, file_name, is_pdf, pack::Kind, render_image, small_button,
+    status_bar, theme, toolbar,
+};
 use crate::{deskew, pdf};
 
-actions!(pdfmonster, [Open, Save, ToggleOriginal, Quit]);
-
-const MASCOT: &[u8] = include_bytes!("../assets/monster.svg");
+const MASCOT: &[u8] = include_bytes!("../../assets/monster.svg");
 const CARD_WIDTH: f32 = 200.0;
 const NUDGE: f32 = 0.1;
 
-mod theme {
-    pub const BG: u32 = 0x16131e;
-    pub const PANEL: u32 = 0x1f1a2b;
-    pub const CARD: u32 = 0x282236;
-    pub const CARD_HOVER: u32 = 0x322a44;
-    pub const BORDER: u32 = 0x3a3150;
-    pub const ACCENT: u32 = 0x7c6cf2;
-    pub const ACCENT_HOVER: u32 = 0x9185f6;
-    pub const YELLOW: u32 = 0xffd166;
-    pub const MINT: u32 = 0x6ee7b7;
-    pub const PINK: u32 = 0xff8fab;
-    pub const TEXT: u32 = 0xece8f6;
-    pub const MUTED: u32 = 0x9a93ad;
-}
-
-pub fn run(initial: Option<PathBuf>) {
-    Application::new().run(move |cx: &mut App| {
-        cx.activate(true);
-        cx.on_action(|_: &Quit, cx| cx.quit());
-        cx.bind_keys([
-            KeyBinding::new("secondary-o", Open, None),
-            KeyBinding::new("secondary-s", Save, None),
-            KeyBinding::new("space", ToggleOriginal, None),
-            KeyBinding::new("secondary-q", Quit, None),
-        ]);
-        cx.set_menus(vec![
-            Menu {
-                name: "pdfmonster".into(),
-                items: vec![MenuItem::action("Quit pdfmonster", Quit)],
-            },
-            Menu {
-                name: "File".into(),
-                items: vec![
-                    MenuItem::action("Open…", Open),
-                    MenuItem::action("Save Aligned…", Save),
-                ],
-            },
-            Menu {
-                name: "View".into(),
-                items: vec![MenuItem::action("Toggle Before / After", ToggleOriginal)],
-            },
-        ]);
-        cx.on_window_closed(|cx| cx.quit()).detach();
-
-        let bounds = Bounds::centered(None, size(px(1120.), px(780.)), cx);
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: Some(TitlebarOptions {
-                title: Some("pdfmonster".into()),
-                ..Default::default()
-            }),
-            app_id: Some("pdfmonster".into()),
-            ..Default::default()
-        };
-        cx.open_window(options, |window, cx| {
-            cx.new(|cx| {
-                let focus = cx.focus_handle();
-                window.focus(&focus);
-                let mut monster = Monster {
-                    focus,
-                    mascot: Arc::new(Image::from_bytes(ImageFormat::Svg, MASCOT.to_vec())),
-                    loaded: None,
-                    busy: None,
-                    status: "Feed me a crooked scan.".into(),
-                    show_original: false,
-                };
-                if let Some(path) = initial {
-                    monster.load(path, cx);
-                }
-                monster
-            })
-        })
-        .expect("failed to open window");
-    });
-}
-
-struct Monster {
-    focus: FocusHandle,
+pub struct Munch {
+    pub focus: FocusHandle,
     mascot: Arc<Image>,
+    portrait: Arc<Image>,
     loaded: Option<Loaded>,
     busy: Option<SharedString>,
     status: SharedString,
@@ -139,8 +64,20 @@ impl PageView {
     }
 }
 
-impl Monster {
-    fn load(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+impl Munch {
+    pub fn new(cx: &mut Context<Self>) -> Self {
+        Munch {
+            focus: cx.focus_handle(),
+            mascot: Arc::new(Image::from_bytes(ImageFormat::Svg, MASCOT.to_vec())),
+            portrait: Kind::Munch.portrait(),
+            loaded: None,
+            busy: None,
+            status: "Feed me a crooked scan.".into(),
+            show_original: false,
+        }
+    }
+
+    pub fn load(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let name = file_name(&path);
         self.busy = Some(format!("Munching {name}…").into());
         cx.notify();
@@ -295,46 +232,30 @@ impl Monster {
             .as_ref()
             .map(|l| file_name(&l.path))
             .unwrap_or_default();
-        let has_doc = self.loaded.is_some();
-
-        div()
-            .flex()
-            .items_center()
-            .gap_3()
-            .px_4()
-            .py_2()
-            .bg(rgb(theme::PANEL))
-            .border_b_1()
-            .border_color(rgb(theme::BORDER))
-            .child(img(self.mascot.clone()).size(px(34.)))
-            .child(
-                div()
-                    .text_lg()
-                    .font_weight(FontWeight::BOLD)
-                    .child("pdfmonster"),
-            )
-            .child(div().text_color(rgb(theme::MUTED)).truncate().child(title))
-            .child(div().flex_1())
-            .child(
-                button("open", "Open…", false)
-                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| this.open(&Open, w, cx))),
-            )
-            .when(has_doc, |bar| {
-                bar.child(
-                    button(
-                        "toggle",
-                        if self.show_original { "Showing: before" } else { "Showing: after" },
-                        false,
-                    )
-                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
-                        this.toggle_original(&ToggleOriginal, w, cx)
-                    })),
+        let mut buttons = vec![
+            button("open", "Open…", false)
+                .on_click(cx.listener(|this, _: &ClickEvent, w, cx| this.open(&Open, w, cx)))
+                .into_any_element(),
+        ];
+        if self.loaded.is_some() {
+            buttons.push(
+                button(
+                    "toggle",
+                    if self.show_original { "Showing: before" } else { "Showing: after" },
+                    false,
                 )
-                .child(
-                    button("save", "Save aligned", true)
-                        .on_click(cx.listener(|this, _: &ClickEvent, w, cx| this.save(&Save, w, cx))),
-                )
-            })
+                .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
+                    this.toggle_original(&ToggleOriginal, w, cx)
+                }))
+                .into_any_element(),
+            );
+            buttons.push(
+                button("save", "Save aligned", true)
+                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| this.save(&Save, w, cx)))
+                    .into_any_element(),
+            );
+        }
+        toolbar(self.portrait.clone(), Kind::Munch, title, buttons)
     }
 
     fn render_empty(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -454,7 +375,7 @@ impl Monster {
     }
 }
 
-impl Render for Monster {
+impl Render for Munch {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let body = match &self.loaded {
             None => self.render_empty(cx).into_any_element(),
@@ -476,20 +397,19 @@ impl Render for Monster {
         };
 
         let status = self.busy.clone().unwrap_or_else(|| self.status.clone());
-        let status_color = if self.busy.is_some() { theme::YELLOW } else { theme::MUTED };
+        let hint = self
+            .loaded
+            .is_some()
+            .then_some("click a page to leave it alone · space: before/after · esc: all monsters");
 
         div()
-            .key_context("Monster")
+            .key_context("Munch")
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::open))
             .on_action(cx.listener(Self::save))
             .on_action(cx.listener(Self::toggle_original))
             .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
-                let pdf = paths
-                    .paths()
-                    .iter()
-                    .find(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")));
-                match pdf {
+                match paths.paths().iter().find(|p| is_pdf(p)) {
                     Some(path) => this.load(path.clone(), cx),
                     None => {
                         this.status = "Only PDFs, please. I'm a picky eater.".into();
@@ -501,72 +421,10 @@ impl Render for Monster {
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(theme::BG))
-            .text_color(rgb(theme::TEXT))
-            .text_sm()
             .child(self.render_toolbar(cx))
             .child(body)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_4()
-                    .py_1()
-                    .bg(rgb(theme::PANEL))
-                    .border_t_1()
-                    .border_color(rgb(theme::BORDER))
-                    .text_xs()
-                    .child(div().size(px(8.)).rounded_full().bg(rgb(if self.busy.is_some() {
-                        theme::YELLOW
-                    } else {
-                        theme::PINK
-                    })))
-                    .child(div().text_color(rgb(status_color)).child(status))
-                    .child(div().flex_1())
-                    .when(self.loaded.is_some(), |d| {
-                        d.child(
-                            div()
-                                .text_color(rgb(theme::MUTED))
-                                .child("click a page to leave it alone · space: before/after"),
-                        )
-                    }),
-            )
+            .child(status_bar(status, self.busy.is_some(), hint))
     }
-}
-
-fn button(id: &'static str, label: impl Into<SharedString>, primary: bool) -> Stateful<gpui::Div> {
-    let (bg, hover, fg) = if primary {
-        (theme::ACCENT, theme::ACCENT_HOVER, 0xffffff)
-    } else {
-        (theme::CARD, theme::CARD_HOVER, theme::TEXT)
-    };
-    div()
-        .id(id)
-        .px_3()
-        .py_1()
-        .rounded_md()
-        .bg(rgb(bg))
-        .text_color(rgb(fg))
-        .font_weight(FontWeight::MEDIUM)
-        .cursor_pointer()
-        .hover(move |s| s.bg(rgb(hover)))
-        .child(label.into())
-}
-
-fn small_button(id: (&'static str, usize), label: &'static str) -> Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .w(px(22.))
-        .h(px(22.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_sm()
-        .bg(rgb(theme::CARD_HOVER))
-        .cursor_pointer()
-        .hover(|s| s.bg(rgb(theme::ACCENT)))
-        .child(label)
 }
 
 fn page_view(page: pdf::Page) -> PageView {
@@ -590,23 +448,8 @@ fn page_view(page: pdf::Page) -> PageView {
     }
 }
 
-fn render_image(gray: &GrayImage) -> Arc<RenderImage> {
-    // Gray pixels are identical in RGBA and BGRA, so no channel swizzle is needed.
-    let rgba = RgbaImage::from_fn(gray.width(), gray.height(), |x, y| {
-        let v = gray.get_pixel(x, y).0[0];
-        image::Rgba([v, v, v, 255])
-    });
-    Arc::new(RenderImage::new(vec![Frame::new(rgba)]))
-}
-
-fn drop_images(page: &PageView, cx: &mut App) {
+fn drop_images(page: &PageView, cx: &mut gpui::App) {
     for image in [&page.original, &page.aligned].into_iter().flatten() {
         cx.drop_image(image.clone(), None);
     }
-}
-
-fn file_name(path: &Path) -> String {
-    path.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default()
 }
