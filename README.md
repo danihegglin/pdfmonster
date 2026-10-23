@@ -101,6 +101,14 @@ Peek uses [ocrs](https://github.com/robertknight/ocrs), a pure-Rust OCR engine. 
 computer. It reads printed Latin-script text (English and other languages without many accents
 work best); handwriting and other scripts aren't supported.
 
+### Chains: several monsters in one go
+
+Click **Chain them up** below the pack to line monsters up: Munch straightens, Peek makes it
+searchable, Squish shrinks it (click Squish to pick its level), and Hush wipes metadata. Then
+drop in one PDF or a whole pile. Each file goes through every step in order and is saved next to
+the original as `NAME.chained.pdf`, with a line per step saying what it did. Stitch, Snip and
+Hush's redaction need you to make choices, so they aren't chainable.
+
 ## Using the CLI
 
 ```sh
@@ -118,6 +126,8 @@ pdfmonster hush contract.pdf --text "Jane Example" --text "CH93 0076 2011 6238 5
 pdfmonster hush scan.pdf --box 1:72,700,300,730   # page:x0,y0,x1,y1 in points from bottom left
 pdfmonster hush report.pdf                        # just wipe the metadata
 pdfmonster peek scan.pdf                # → scan.searchable.pdf
+pdfmonster chain "munch > peek > squish" scan.pdf more.pdf   # → scan.chained.pdf, more.chained.pdf
+pdfmonster chain "peek > squish:strong > hush" scan.pdf -o send.pdf
 ```
 
 ```

@@ -1,5 +1,6 @@
 //! The gpui front end: a home screen with the whole pack, and one screen per monster.
 
+mod chain;
 mod hush;
 mod munch;
 mod pack;
@@ -100,6 +101,19 @@ pub fn run(initial: Vec<PathBuf>) {
     });
 }
 
+/// What the window is showing, besides the home screen.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Screen {
+    Monster(Kind),
+    Chains,
+}
+
+impl From<Kind> for Screen {
+    fn from(kind: Kind) -> Self {
+        Screen::Monster(kind)
+    }
+}
+
 /// One open monster screen.
 enum Tool {
     Munch(Entity<munch::Munch>),
@@ -108,28 +122,31 @@ enum Tool {
     Squish(Entity<squish::Squish>),
     Hush(Entity<hush::Hush>),
     Peek(Entity<peek::Peek>),
+    Chains(Entity<chain::Chains>),
 }
 
 impl Tool {
-    fn new(kind: Kind, cx: &mut App) -> Option<Self> {
-        match kind {
-            Kind::Munch => Some(Tool::Munch(cx.new(munch::Munch::new))),
-            Kind::Stitch => Some(Tool::Stitch(cx.new(stitch::Stitch::new))),
-            Kind::Snip => Some(Tool::Snip(cx.new(snip::Snip::new))),
-            Kind::Squish => Some(Tool::Squish(cx.new(squish::Squish::new))),
-            Kind::Hush => Some(Tool::Hush(cx.new(hush::Hush::new))),
-            Kind::Peek => Some(Tool::Peek(cx.new(peek::Peek::new))),
+    fn new(screen: Screen, cx: &mut App) -> Self {
+        match screen {
+            Screen::Monster(Kind::Munch) => Tool::Munch(cx.new(munch::Munch::new)),
+            Screen::Monster(Kind::Stitch) => Tool::Stitch(cx.new(stitch::Stitch::new)),
+            Screen::Monster(Kind::Snip) => Tool::Snip(cx.new(snip::Snip::new)),
+            Screen::Monster(Kind::Squish) => Tool::Squish(cx.new(squish::Squish::new)),
+            Screen::Monster(Kind::Hush) => Tool::Hush(cx.new(hush::Hush::new)),
+            Screen::Monster(Kind::Peek) => Tool::Peek(cx.new(peek::Peek::new)),
+            Screen::Chains => Tool::Chains(cx.new(chain::Chains::new)),
         }
     }
 
-    fn kind(&self) -> Kind {
+    fn screen(&self) -> Screen {
         match self {
-            Tool::Munch(_) => Kind::Munch,
-            Tool::Stitch(_) => Kind::Stitch,
-            Tool::Snip(_) => Kind::Snip,
-            Tool::Squish(_) => Kind::Squish,
-            Tool::Hush(_) => Kind::Hush,
-            Tool::Peek(_) => Kind::Peek,
+            Tool::Munch(_) => Kind::Munch.into(),
+            Tool::Stitch(_) => Kind::Stitch.into(),
+            Tool::Snip(_) => Kind::Snip.into(),
+            Tool::Squish(_) => Kind::Squish.into(),
+            Tool::Hush(_) => Kind::Hush.into(),
+            Tool::Peek(_) => Kind::Peek.into(),
+            Tool::Chains(_) => Screen::Chains,
         }
     }
 
@@ -161,6 +178,7 @@ impl Tool {
                     view.load(path, cx);
                 }
             }),
+            Tool::Chains(view) => view.update(cx, |view, cx| view.run(paths, cx)),
         }
     }
 
@@ -172,6 +190,7 @@ impl Tool {
             Tool::Squish(view) => window.focus(&view.read(cx).focus),
             Tool::Hush(view) => window.focus(&view.read(cx).focus),
             Tool::Peek(view) => window.focus(&view.read(cx).focus),
+            Tool::Chains(view) => window.focus(&view.read(cx).focus),
         }
     }
 
@@ -183,6 +202,7 @@ impl Tool {
             Tool::Squish(view) => view.clone().into(),
             Tool::Hush(view) => view.clone().into(),
             Tool::Peek(view) => view.clone().into(),
+            Tool::Chains(view) => view.clone().into(),
         }
     }
 }
@@ -192,33 +212,35 @@ struct Home {
     portraits: Vec<Arc<Image>>,
     /// Monsters that have been opened, kept so their work survives a trip home.
     tools: Vec<Tool>,
-    active: Option<Kind>,
+    active: Option<Screen>,
     status: SharedString,
 }
 
 impl Home {
     /// Switches to a monster's screen, waking it up if needed.
-    fn show(&mut self, kind: Kind, window: &mut Window, cx: &mut Context<Self>) -> Option<&Tool> {
-        if !self.tools.iter().any(|t| t.kind() == kind) {
-            self.tools.push(Tool::new(kind, cx)?);
-        }
-        let tool = self.tools.iter().find(|t| t.kind() == kind)?;
-        tool.focus(window, cx);
-        self.active = Some(kind);
+    fn show(&mut self, screen: impl Into<Screen>, window: &mut Window, cx: &mut Context<Self>) -> &Tool {
+        let screen = screen.into();
+        let ix = match self.tools.iter().position(|t| t.screen() == screen) {
+            Some(ix) => ix,
+            None => {
+                self.tools.push(Tool::new(screen, cx));
+                self.tools.len() - 1
+            }
+        };
+        self.tools[ix].focus(window, cx);
+        self.active = Some(screen);
         cx.notify();
-        Some(tool)
+        &self.tools[ix]
     }
 
-    fn feed(&mut self, kind: Kind, paths: Vec<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
+    fn feed(&mut self, screen: impl Into<Screen>, paths: Vec<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
         let paths: Vec<PathBuf> = paths.into_iter().filter(|p| is_pdf(p)).collect();
         if paths.is_empty() {
             self.status = "Only PDFs, please. We're picky eaters.".into();
             cx.notify();
             return;
         }
-        if let Some(tool) = self.show(kind, window, cx) {
-            tool.feed(paths, cx);
-        }
+        self.show(screen, window, cx).feed(paths, cx);
     }
 
     fn go_home(&mut self, _: &GoHome, window: &mut Window, cx: &mut Context<Self>) {
@@ -321,6 +343,56 @@ impl Home {
                     ),
             )
             .child(div().w(px(820.)).grid().grid_cols(3).gap_4().children(tiles))
+            .child(self.render_chain_banner(cx))
+    }
+
+    /// The way into chains, below the pack.
+    fn render_chain_banner(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut faces = Vec::new();
+        for (ix, kind) in [Kind::Munch, Kind::Peek, Kind::Squish].into_iter().enumerate() {
+            if ix > 0 {
+                faces.push(div().text_color(rgb(theme::MUTED)).child("→").into_any_element());
+            }
+            faces.push(img(self.portrait(kind)).w(px(40.)).h(px(41.)).into_any_element());
+        }
+        div()
+            .id("chains")
+            .w(px(820.))
+            .flex()
+            .items_center()
+            .gap_4()
+            .p_4()
+            .rounded_xl()
+            .bg(rgb(theme::CARD))
+            .border_2()
+            .border_color(rgb(theme::BORDER))
+            .cursor_pointer()
+            .hover(|t| t.bg(rgb(theme::CARD_HOVER)).border_color(rgb(theme::ACCENT)))
+            .drag_over::<ExternalPaths>(|t, _, _, _| t.border_color(rgb(theme::ACCENT)))
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.show(Screen::Chains, window, cx);
+            }))
+            .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                this.feed(Screen::Chains, paths.paths().to_vec(), window, cx)
+            }))
+            .child(div().flex().items_center().gap_1().children(faces))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .child(div().text_lg().font_weight(FontWeight::BOLD).child("Chain them up"))
+                    .child(div().text_color(rgb(theme::MUTED)).child(
+                        "Munch straightens a scan, Peek makes it searchable, Squish shrinks it. One drop, three jobs.",
+                    )),
+            )
+            .child(button("build-chain", "Build a chain", false))
+    }
+
+    fn portrait(&self, kind: Kind) -> Arc<Image> {
+        let ix = PACK.iter().position(|&k| k == kind).expect("every monster is in the pack");
+        self.portraits[ix].clone()
     }
 }
 
@@ -328,7 +400,7 @@ impl Render for Home {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let active = self
             .active
-            .and_then(|kind| self.tools.iter().find(|t| t.kind() == kind));
+            .and_then(|screen| self.tools.iter().find(|t| t.screen() == screen));
 
         let root = div()
             .key_context("Home")
@@ -365,6 +437,16 @@ fn toolbar(
     title: String,
     buttons: impl IntoIterator<Item = gpui::AnyElement>,
 ) -> impl IntoElement {
+    toolbar_with(img(portrait).w(px(34.)).h(px(35.)), kind.species().name, title, buttons)
+}
+
+/// [`toolbar`] for screens that aren't one monster's.
+fn toolbar_with(
+    icon: impl IntoElement,
+    name: &'static str,
+    title: String,
+    buttons: impl IntoIterator<Item = gpui::AnyElement>,
+) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -378,8 +460,8 @@ fn toolbar(
             button("home", "← Pack", false)
                 .on_click(|_, window, cx| window.dispatch_action(Box::new(GoHome), cx)),
         )
-        .child(img(portrait).w(px(34.)).h(px(35.)))
-        .child(div().text_lg().font_weight(FontWeight::BOLD).child(kind.species().name))
+        .child(icon)
+        .child(div().text_lg().font_weight(FontWeight::BOLD).child(name))
         .child(div().text_color(rgb(theme::MUTED)).truncate().child(title))
         .child(div().flex_1())
         .children(buttons)

@@ -87,16 +87,23 @@ pub fn save_straightened(
     corrections: &[(ObjectId, f32)],
     out: &Path,
 ) -> Result<usize> {
+    let changed = straighten(&mut doc, corrections)?;
+    doc.save(out)
+        .with_context(|| format!("could not write {}", out.display()))?;
+    Ok(changed)
+}
+
+/// Rotates the given pages counter-clockwise by the given angles (degrees).
+/// Returns how many pages were turned.
+pub fn straighten(doc: &mut Document, corrections: &[(ObjectId, f32)]) -> Result<usize> {
     let mut changed = 0;
     for &(page_id, degrees) in corrections {
         if degrees.abs() < MIN_CORRECTION {
             continue;
         }
-        rotate_page(&mut doc, page_id, degrees)?;
+        rotate_page(doc, page_id, degrees)?;
         changed += 1;
     }
-    doc.save(out)
-        .with_context(|| format!("could not write {}", out.display()))?;
     Ok(changed)
 }
 
