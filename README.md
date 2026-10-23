@@ -181,8 +181,13 @@ Every tagged release (`v*`) is built by GitHub Actions and attached to the
 
 The macOS app is ad-hoc signed, not notarized: the first time, right-click it and choose **Open**.
 
-To cut a release, push a version tag: `git tag v0.2.0 && git push --tags`. The tag sets the
-version of every package.
+Releases are tagged automatically. Every merge to `main` that changes the app (`src/`, `models/`,
+`assets/`, `packaging/` or `Cargo.*`) tags the next patch version, for example `v0.2.1` after `v0.2`,
+and builds and publishes that release. To bump more, put `#minor` or `#major` in the PR title or
+label the PR `release:minor` / `release:major`. Use `#skip-release` or `release:skip` to merge
+without releasing. You can also run the **Auto tag** workflow by hand to pick the bump or an exact
+version such as `1.0.0-beta.1`, or push a tag yourself: `git tag v0.3.0 && git push --tags`. The
+tag sets the version of every package, so Cargo.toml doesn't need bumping.
 
 ## How it works
 
