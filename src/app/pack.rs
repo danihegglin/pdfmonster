@@ -120,7 +120,7 @@ impl Kind {
                 job: "Redacts & strips metadata",
                 blurb: "Blacks out the sensitive bits for real and wipes hidden author and edit history.",
                 color: 0x5a5a80,
-                ready: false,
+                ready: true,
                 body: Body::Boxy,
                 eyes: 2,
                 mouth: Mouth::Zip,

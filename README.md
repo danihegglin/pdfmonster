@@ -68,6 +68,26 @@ scales oversized ones down to that resolution and re-encodes them as JPEG, but o
 version when it's at least 10% smaller. It also compresses uncompressed streams, drops unused
 objects and writes compressed object streams. Masks, 1-bit and CMYK images are left alone.
 
+### Hush: redaction and metadata
+
+Drag over anything on a page that has to go, or type a name, an account number or any other
+text in the sidebar and press **Find & box it** to box every occurrence. **Save hushed** removes
+what's under the boxes from the file for real, rather than only covering it:
+
+- text is taken out glyph by glyph, and the rest of the line stays exactly where it was;
+- the covered part of an image is painted black in a copy of the image;
+- comments, links and form fields touching a box are deleted;
+- anything Hush can't cut precisely (embedded graphics, inline images, images in CCITT, JBIG2 or
+  JPEG 2000, text in unknown fonts without widths) is removed whole if it touches a box, and
+  Hush tells you;
+- then a black box is painted on top.
+
+Hush also lists the hidden metadata it finds (author, title, the app that made the file, dates,
+XMP, EXIF camera and GPS data in photos, author names on comments) and wipes it when saving.
+Rewriting the file also drops the edit history of incrementally saved PDFs.
+
+Text search needs real text. For scans, run Peek first.
+
 ## Using the CLI
 
 ```sh
@@ -81,6 +101,9 @@ pdfmonster snip scan.pdf 3,1 -o two.pdf # pages 3 and 1, in that order
 pdfmonster snip scan.pdf --every 1      # one file per page
 pdfmonster squish big.pdf               # → big.squished.pdf (medium)
 pdfmonster squish big.pdf --strong -o small.pdf
+pdfmonster hush contract.pdf --text "Jane Example" --text "CH93 0076 2011 6238 5295 7"
+pdfmonster hush scan.pdf --box 1:72,700,300,730   # page:x0,y0,x1,y1 in points from bottom left
+pdfmonster hush report.pdf                        # just wipe the metadata
 ```
 
 ```

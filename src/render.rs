@@ -6,8 +6,10 @@
 use std::sync::Arc;
 
 use hayro::{
-    PixmapSettings, RenderCache, RenderSettings, hayro_interpret::InterpreterSettings,
-    hayro_syntax::Pdf, vello_cpu::color::palette::css::WHITE,
+    PixmapSettings, RenderCache, RenderSettings,
+    hayro_interpret::{InterpreterSettings, util::TransformExt},
+    hayro_syntax::Pdf,
+    vello_cpu::color::palette::css::WHITE,
 };
 use image::RgbaImage;
 use rayon::prelude::*;
@@ -23,6 +25,17 @@ pub fn thumbnails(data: Arc<Vec<u8>>, max_side: f32) -> Vec<Option<RgbaImage>> {
         .into_par_iter()
         // hayro's documents aren't shareable across threads, so each worker opens its own.
         .map_init(|| Pdf::new(data.clone()).ok(), |pdf, ix| render_page(pdf.as_ref()?, ix, max_side))
+        .collect()
+}
+
+/// For every page: the matrix that maps the page's own coordinates (PDF points,
+/// y up, before /Rotate) onto a rendering at scale 1 (y down, rotated), and the
+/// size of that rendering.
+pub fn page_geometry(data: Arc<Vec<u8>>) -> Vec<Option<([f64; 6], (f32, f32))>> {
+    let Ok(pdf) = Pdf::new(data) else { return Vec::new() };
+    pdf.pages()
+        .iter()
+        .map(|page| Some((page.initial_transform(true).to_kurbo().as_coeffs(), page.render_dimensions())))
         .collect()
 }
 

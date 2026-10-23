@@ -1,5 +1,6 @@
 //! The gpui front end: a home screen with the whole pack, and one screen per monster.
 
+mod hush;
 mod munch;
 mod pack;
 mod snip;
@@ -45,7 +46,7 @@ pub fn run(initial: Vec<PathBuf>) {
         cx.bind_keys([
             KeyBinding::new("secondary-o", Open, None),
             KeyBinding::new("secondary-s", Save, None),
-            KeyBinding::new("space", ToggleOriginal, None),
+            KeyBinding::new("space", ToggleOriginal, Some("Munch")),
             KeyBinding::new("escape", GoHome, None),
             KeyBinding::new("secondary-q", Quit, None),
         ]);
@@ -104,6 +105,7 @@ enum Tool {
     Stitch(Entity<stitch::Stitch>),
     Snip(Entity<snip::Snip>),
     Squish(Entity<squish::Squish>),
+    Hush(Entity<hush::Hush>),
 }
 
 impl Tool {
@@ -113,6 +115,7 @@ impl Tool {
             Kind::Stitch => Some(Tool::Stitch(cx.new(stitch::Stitch::new))),
             Kind::Snip => Some(Tool::Snip(cx.new(snip::Snip::new))),
             Kind::Squish => Some(Tool::Squish(cx.new(squish::Squish::new))),
+            Kind::Hush => Some(Tool::Hush(cx.new(hush::Hush::new))),
             _ => None,
         }
     }
@@ -123,6 +126,7 @@ impl Tool {
             Tool::Stitch(_) => Kind::Stitch,
             Tool::Snip(_) => Kind::Snip,
             Tool::Squish(_) => Kind::Squish,
+            Tool::Hush(_) => Kind::Hush,
         }
     }
 
@@ -144,6 +148,11 @@ impl Tool {
                     view.load(path, cx);
                 }
             }),
+            Tool::Hush(view) => view.update(cx, |view, cx| {
+                if let Some(path) = paths.into_iter().next() {
+                    view.load(path, cx);
+                }
+            }),
         }
     }
 
@@ -153,6 +162,7 @@ impl Tool {
             Tool::Stitch(view) => window.focus(&view.read(cx).focus),
             Tool::Snip(view) => window.focus(&view.read(cx).focus),
             Tool::Squish(view) => window.focus(&view.read(cx).focus),
+            Tool::Hush(view) => window.focus(&view.read(cx).focus),
         }
     }
 
@@ -162,6 +172,7 @@ impl Tool {
             Tool::Stitch(view) => view.clone().into(),
             Tool::Snip(view) => view.clone().into(),
             Tool::Squish(view) => view.clone().into(),
+            Tool::Hush(view) => view.clone().into(),
         }
     }
 }
