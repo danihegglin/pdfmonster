@@ -303,14 +303,15 @@ jobs:
         if: matrix.arch == 'x86_64'
         shell: pwsh
         run: |
-          & ./target/${{ matrix.target }}/release/pdfmonster.exe --help
+          # Piping makes PowerShell wait for the exe, which matters once it is a GUI-subsystem app.
+          & ./target/${{ matrix.target }}/release/pdfmonster.exe --help | Out-Host
           if ($LASTEXITCODE -ne 0) { throw "pdfmonster.exe --help failed" }
           # Silent per-user install, check the installed binary runs, then uninstall.
           $setup = Get-Item "dist/pdfmonster-$env:VERSION-windows-x86_64-setup.exe"
           $p = Start-Process $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Installer exited with $($p.ExitCode)" }
           $app = "$env:LOCALAPPDATA\Programs\pdfmonster"
-          & "$app\pdfmonster.exe" --help
+          & "$app\pdfmonster.exe" --help | Out-Host
           if ($LASTEXITCODE -ne 0) { throw "Installed pdfmonster.exe failed" }
           $p = Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Uninstaller exited with $($p.ExitCode)" }
