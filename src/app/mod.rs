@@ -3,6 +3,7 @@
 mod munch;
 mod pack;
 mod snip;
+mod squish;
 mod stitch;
 
 use std::{
@@ -102,6 +103,7 @@ enum Tool {
     Munch(Entity<munch::Munch>),
     Stitch(Entity<stitch::Stitch>),
     Snip(Entity<snip::Snip>),
+    Squish(Entity<squish::Squish>),
 }
 
 impl Tool {
@@ -110,6 +112,7 @@ impl Tool {
             Kind::Munch => Some(Tool::Munch(cx.new(munch::Munch::new))),
             Kind::Stitch => Some(Tool::Stitch(cx.new(stitch::Stitch::new))),
             Kind::Snip => Some(Tool::Snip(cx.new(snip::Snip::new))),
+            Kind::Squish => Some(Tool::Squish(cx.new(squish::Squish::new))),
             _ => None,
         }
     }
@@ -119,6 +122,7 @@ impl Tool {
             Tool::Munch(_) => Kind::Munch,
             Tool::Stitch(_) => Kind::Stitch,
             Tool::Snip(_) => Kind::Snip,
+            Tool::Squish(_) => Kind::Squish,
         }
     }
 
@@ -135,6 +139,11 @@ impl Tool {
                     view.load(path, cx);
                 }
             }),
+            Tool::Squish(view) => view.update(cx, |view, cx| {
+                if let Some(path) = paths.into_iter().next() {
+                    view.load(path, cx);
+                }
+            }),
         }
     }
 
@@ -143,6 +152,7 @@ impl Tool {
             Tool::Munch(view) => window.focus(&view.read(cx).focus),
             Tool::Stitch(view) => window.focus(&view.read(cx).focus),
             Tool::Snip(view) => window.focus(&view.read(cx).focus),
+            Tool::Squish(view) => window.focus(&view.read(cx).focus),
         }
     }
 
@@ -151,6 +161,7 @@ impl Tool {
             Tool::Munch(view) => view.clone().into(),
             Tool::Stitch(view) => view.clone().into(),
             Tool::Snip(view) => view.clone().into(),
+            Tool::Squish(view) => view.clone().into(),
         }
     }
 }

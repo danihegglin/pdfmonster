@@ -1,9 +1,11 @@
 mod app;
+mod content;
 mod deskew;
 mod pages;
 mod pdf;
 mod render;
 mod snip;
+mod squish;
 mod stitch;
 
 use std::{path::PathBuf, process::ExitCode, time::Instant};
@@ -23,6 +25,8 @@ USAGE:
                                                keep only some pages, e.g. 4-9 or 1,3,10-
                                                (one file per PAGES; default IN.p4-9.pdf)
     pdfmonster snip <IN.pdf> --every N         split into files of N pages each
+    pdfmonster squish <IN.pdf> [--light|--strong] [-o OUT.pdf]
+                                               shrink the file (default OUT: IN.squished.pdf)
 ";
 
 fn main() -> ExitCode {
@@ -32,11 +36,12 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             ExitCode::SUCCESS
         }
-        Some(cmd @ ("fix" | "stitch" | "snip")) => {
+        Some(cmd @ ("fix" | "stitch" | "snip" | "squish")) => {
             let result = match cmd {
                 "fix" => fix(&args[1..]),
                 "stitch" => stitch(&args[1..]),
-                _ => snip(&args[1..]),
+                "snip" => snip(&args[1..]),
+                _ => squish(&args[1..]),
             };
             match result {
                 Ok(()) => ExitCode::SUCCESS,
@@ -187,4 +192,55 @@ fn snip(args: &[String]) -> anyhow::Result<()> {
         start.elapsed().as_millis()
     );
     Ok(())
+}
+
+fn squish(args: &[String]) -> anyhow::Result<()> {
+    let mut level = squish::Level::default();
+    let rest: Vec<String> = args
+        .iter()
+        .filter(|a| match a.strip_prefix("--").and_then(squish::Level::parse) {
+            Some(l) => {
+                level = l;
+                false
+            }
+            None => true,
+        })
+        .cloned()
+        .collect();
+    let (inputs, output) = inputs_and_output(&rest)?;
+    let input = match &inputs[..] {
+        [input] => input.clone(),
+        [] => anyhow::bail!("missing input file\n\n{USAGE}"),
+        [_, extra, ..] => anyhow::bail!("unexpected argument {extra:?}\n\n{USAGE}"),
+    };
+    let output = output.unwrap_or_else(|| squish::default_output(&input));
+
+    let start = Instant::now();
+    let before = std::fs::metadata(&input)?.len();
+    let mut doc = pdf::open(&input)?;
+    let report = squish::squish(&mut doc, level);
+    let bytes = squish::to_bytes(&mut doc)?;
+    std::fs::write(&output, &bytes)
+        .map_err(|e| anyhow::anyhow!("could not write {}: {e}", output.display()))?;
+    let after = bytes.len() as u64;
+    println!(
+        "{level} squish: {}/{} images shrunk, {} → {} ({:.0}% smaller) → {} in {} ms",
+        report.shrunk,
+        report.images,
+        human_size(before),
+        human_size(after),
+        100.0 - after as f64 * 100.0 / before.max(1) as f64,
+        output.display(),
+        start.elapsed().as_millis(),
+        level = level.label(),
+    );
+    Ok(())
+}
+
+pub fn human_size(bytes: u64) -> String {
+    match bytes {
+        b if b >= 1 << 20 => format!("{:.1} MB", b as f64 / (1 << 20) as f64),
+        b if b >= 1 << 10 => format!("{:.0} KB", b as f64 / (1 << 10) as f64),
+        b => format!("{b} B"),
+    }
 }
