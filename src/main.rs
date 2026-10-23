@@ -1,11 +1,13 @@
 mod app;
 mod content;
 mod deskew;
+mod hush;
 mod pages;
 mod pdf;
 mod render;
 mod snip;
 mod squish;
+mod std_widths;
 mod stitch;
 
 use std::{path::PathBuf, process::ExitCode, time::Instant};
@@ -25,6 +27,9 @@ USAGE:
                                                keep only some pages, e.g. 4-9 or 1,3,10-
                                                (one file per PAGES; default IN.p4-9.pdf)
     pdfmonster snip <IN.pdf> --every N         split into files of N pages each
+    pdfmonster hush <IN.pdf> [--text WORDS]… [--box PAGE:X0,Y0,X1,Y1]… [--keep-metadata] [-o OUT.pdf]
+                                               redact for real and strip metadata
+                                               (default OUT: IN.hushed.pdf)
     pdfmonster squish <IN.pdf> [--light|--strong] [-o OUT.pdf]
                                                shrink the file (default OUT: IN.squished.pdf)
 ";
@@ -36,11 +41,12 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             ExitCode::SUCCESS
         }
-        Some(cmd @ ("fix" | "stitch" | "snip" | "squish")) => {
+        Some(cmd @ ("fix" | "stitch" | "snip" | "squish" | "hush")) => {
             let result = match cmd {
                 "fix" => fix(&args[1..]),
                 "stitch" => stitch(&args[1..]),
                 "snip" => snip(&args[1..]),
+                "hush" => hush(&args[1..]),
                 _ => squish(&args[1..]),
             };
             match result {
@@ -243,4 +249,72 @@ pub fn human_size(bytes: u64) -> String {
         b if b >= 1 << 10 => format!("{:.0} KB", b as f64 / (1 << 10) as f64),
         b => format!("{b} B"),
     }
+}
+
+fn hush(args: &[String]) -> anyhow::Result<()> {
+    let mut texts = Vec::new();
+    let mut boxes = Vec::new();
+    let mut keep_metadata = false;
+    let mut rest = Vec::new();
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--text" => texts.push(it.next().ok_or_else(|| anyhow::anyhow!("--text needs the words to redact"))?.clone()),
+            "--box" => {
+                let spec = it.next().ok_or_else(|| anyhow::anyhow!("--box needs PAGE:X0,Y0,X1,Y1"))?;
+                boxes.push(parse_box(spec)?);
+            }
+            "--keep-metadata" => keep_metadata = true,
+            _ => rest.push(arg.clone()),
+        }
+    }
+    let (inputs, output) = inputs_and_output(&rest)?;
+    let input = match &inputs[..] {
+        [input] => input.clone(),
+        [] => anyhow::bail!("missing input file\n\n{USAGE}"),
+        [_, extra, ..] => anyhow::bail!("unexpected argument {extra:?}\n\n{USAGE}"),
+    };
+    let output = output.unwrap_or_else(|| hush::default_output(&input));
+
+    let start = Instant::now();
+    let mut doc = pdf::open(&input)?;
+    for text in &texts {
+        let found = hush::find_text(&doc, text);
+        println!("{:>5} × {text:?}", found.len());
+        boxes.extend(found);
+    }
+    let report = hush::redact(&mut doc, &boxes)?;
+    for note in &report.removed_whole {
+        println!("removed whole: {note}");
+    }
+    let metadata = if keep_metadata { Vec::new() } else { hush::describe_metadata(&doc) };
+    if !keep_metadata {
+        hush::strip_metadata(&mut doc);
+    }
+    doc.save(&output)
+        .map_err(|e| anyhow::anyhow!("could not write {}: {e}", output.display()))?;
+    for item in &metadata {
+        println!("wiped {item}");
+    }
+    println!(
+        "hushed {} boxes ({} glyphs, {} images, {} annotations) → {} in {} ms",
+        boxes.len(),
+        report.glyphs,
+        report.images,
+        report.annotations,
+        output.display(),
+        start.elapsed().as_millis()
+    );
+    Ok(())
+}
+
+/// `3:72,700,200,720` → a box on page 3.
+fn parse_box(spec: &str) -> anyhow::Result<hush::Area> {
+    let parse = || -> Option<hush::Area> {
+        let (page, rect) = spec.split_once(':')?;
+        let n: Vec<f64> = rect.split(',').map(|v| v.trim().parse().ok()).collect::<Option<_>>()?;
+        let [x0, y0, x1, y1] = n[..] else { return None };
+        Some(hush::Area { page: page.trim().parse().ok()?, rect: [x0, y0, x1, y1] })
+    };
+    parse().ok_or_else(|| anyhow::anyhow!("{spec:?} is not PAGE:X0,Y0,X1,Y1 (in points, from the bottom left)"))
 }
