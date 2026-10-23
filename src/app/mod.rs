@@ -2,6 +2,7 @@
 
 mod munch;
 mod pack;
+mod stitch;
 
 use std::{
     path::{Path, PathBuf},
@@ -35,7 +36,7 @@ mod theme {
     pub const MUTED: u32 = 0x9a93ad;
 }
 
-pub fn run(initial: Option<PathBuf>) {
+pub fn run(initial: Vec<PathBuf>) {
     Application::new().run(move |cx: &mut App| {
         cx.activate(true);
         cx.on_action(|_: &Quit, cx| cx.quit());
@@ -82,11 +83,11 @@ pub fn run(initial: Option<PathBuf>) {
                     portraits: PACK.iter().map(|k| k.portrait()).collect(),
                     tools: Vec::new(),
                     active: None,
-                    status: "Drop a PDF anywhere to feed Munch, or on a monster to feed that one.".into(),
+                    status: "Drop a PDF on a monster to feed it. Anywhere else: one file goes to Munch, several to Stitch.".into(),
                 };
-                match initial {
-                    Some(path) => home.feed(Kind::Munch, vec![path], window, cx),
-                    None => window.focus(&home.focus),
+                match initial.len() {
+                    0 => window.focus(&home.focus),
+                    n => home.feed(if n == 1 { Kind::Munch } else { Kind::Stitch }, initial, window, cx),
                 }
                 home
             })
@@ -98,12 +99,14 @@ pub fn run(initial: Option<PathBuf>) {
 /// One open monster screen.
 enum Tool {
     Munch(Entity<munch::Munch>),
+    Stitch(Entity<stitch::Stitch>),
 }
 
 impl Tool {
     fn new(kind: Kind, cx: &mut App) -> Option<Self> {
         match kind {
             Kind::Munch => Some(Tool::Munch(cx.new(munch::Munch::new))),
+            Kind::Stitch => Some(Tool::Stitch(cx.new(stitch::Stitch::new))),
             _ => None,
         }
     }
@@ -111,6 +114,7 @@ impl Tool {
     fn kind(&self) -> Kind {
         match self {
             Tool::Munch(_) => Kind::Munch,
+            Tool::Stitch(_) => Kind::Stitch,
         }
     }
 
@@ -121,18 +125,21 @@ impl Tool {
                     view.load(path, cx);
                 }
             }),
+            Tool::Stitch(view) => view.update(cx, |view, cx| view.add(paths, cx)),
         }
     }
 
     fn focus(&self, window: &mut Window, cx: &App) {
         match self {
             Tool::Munch(view) => window.focus(&view.read(cx).focus),
+            Tool::Stitch(view) => window.focus(&view.read(cx).focus),
         }
     }
 
     fn view(&self) -> AnyView {
         match self {
             Tool::Munch(view) => view.clone().into(),
+            Tool::Stitch(view) => view.clone().into(),
         }
     }
 }
@@ -296,7 +303,10 @@ impl Render for Home {
             None => root
                 .on_action(cx.listener(Self::open))
                 .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
-                    this.feed(Kind::Munch, paths.paths().to_vec(), window, cx)
+                    // One scan goes to Munch; a pile of them is clearly a job for Stitch.
+                    let pdfs = paths.paths().iter().filter(|p| is_pdf(p)).count();
+                    let kind = if pdfs > 1 { Kind::Stitch } else { Kind::Munch };
+                    this.feed(kind, paths.paths().to_vec(), window, cx)
                 }))
                 .drag_over::<ExternalPaths>(|style, _, _, _| style.bg(rgb(0x221c33)))
                 .child(self.render_home(cx))
@@ -330,6 +340,26 @@ fn toolbar(
         .child(div().text_color(rgb(theme::MUTED)).truncate().child(title))
         .child(div().flex_1())
         .children(buttons)
+}
+
+/// What a monster shows before it has been fed.
+fn empty_state(
+    portrait: Arc<Image>,
+    title: &'static str,
+    subtitle: &'static str,
+    action: impl IntoElement,
+) -> impl IntoElement {
+    div()
+        .flex_1()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap_4()
+        .child(img(portrait).w(px(160.)).h(px(165.)))
+        .child(div().text_2xl().font_weight(FontWeight::BOLD).child(title))
+        .child(div().text_color(rgb(theme::MUTED)).child(subtitle))
+        .child(action)
 }
 
 fn status_bar(status: SharedString, busy: bool, hint: Option<&'static str>) -> impl IntoElement {
