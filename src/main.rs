@@ -11,6 +11,7 @@ mod snip;
 mod squish;
 mod std_widths;
 mod stitch;
+mod watch;
 
 use std::{path::PathBuf, process::ExitCode, time::Instant};
 
@@ -41,6 +42,9 @@ USAGE:
                                                \"munch > peek > squish\" (steps: munch, peek,
                                                squish[:light|:strong], hush)
                                                (default OUT: IN.chained.pdf)
+    pdfmonster watch <FOLDER> <STEPS>          run a chain on every PDF that lands in FOLDER;
+                                               results go to FOLDER/done, originals to
+                                               FOLDER/originals (stop with Ctrl-C)
 ";
 
 fn main() -> ExitCode {
@@ -50,7 +54,7 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             ExitCode::SUCCESS
         }
-        Some(cmd @ ("fix" | "stitch" | "snip" | "squish" | "hush" | "peek" | "chain")) => {
+        Some(cmd @ ("fix" | "stitch" | "snip" | "squish" | "hush" | "peek" | "chain" | "watch")) => {
             let result = match cmd {
                 "fix" => fix(&args[1..]),
                 "stitch" => stitch(&args[1..]),
@@ -58,6 +62,7 @@ fn main() -> ExitCode {
                 "hush" => hush(&args[1..]),
                 "peek" => peek(&args[1..]),
                 "chain" => chain(&args[1..]),
+                "watch" => watch(&args[1..]),
                 _ => squish(&args[1..]),
             };
             match result {
@@ -314,6 +319,39 @@ fn chain(args: &[String]) -> anyhow::Result<()> {
         println!("    → {} ({}) in {} ms", out.display(), human_size(bytes.len() as u64), start.elapsed().as_millis());
     }
     Ok(())
+}
+
+fn watch(args: &[String]) -> anyhow::Result<()> {
+    let [folder, steps] = args else {
+        anyhow::bail!("usage: pdfmonster watch <FOLDER> <STEPS>\n\n{USAGE}");
+    };
+    let folder = PathBuf::from(folder);
+    anyhow::ensure!(folder.is_dir(), "{} is not a folder", folder.display());
+    let chain = chain::Chain::parse(steps)?;
+    println!("watching {} with {chain} (Ctrl-C to stop)", folder.display());
+    let mut watcher = watch::Watcher::default();
+    loop {
+        for input in watcher.ready(&folder) {
+            let processed = watch::process(&input, &chain);
+            let name = input.file_name().unwrap_or_default().to_string_lossy().into_owned();
+            match processed {
+                Ok(done) => {
+                    println!(
+                        "{name} → {} ({} → {}) in {} ms",
+                        done.output.display(),
+                        human_size(done.before),
+                        human_size(done.after),
+                        done.millis
+                    );
+                    for line in &done.log {
+                        println!("    {line}");
+                    }
+                }
+                Err(err) => println!("{name}: failed, moved to {}/: {err:#}", watch::FAILED),
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
 }
 
 pub fn human_size(bytes: u64) -> String {

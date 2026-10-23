@@ -9,6 +9,7 @@ readme = "README.md"
 
 [dependencies]
 anyhow = "1"
+dirs = "5"
 gpui = { version = "0.2.2", features = ["runtime_shaders"] }
 hayro = { version = "0.8", features = ["embed-fonts"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }

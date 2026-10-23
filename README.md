@@ -109,6 +109,20 @@ drop in one PDF or a whole pile. Each file goes through every step in order and 
 the original as `NAME.chained.pdf`, with a line per step saying what it did. Stitch, Snip and
 Hush's redaction need you to make choices, so they aren't chainable.
 
+### Watched folders
+
+On the chains screen, **Watch a folder with this chain…** turns any folder (your scanner's
+output folder, a synced folder, a network share) into a hot folder. While pdfmonster is open,
+every PDF that lands there goes through the chain on its own:
+
+- it waits until the file has stopped growing, so half-copied scans are left alone;
+- the result goes to `done/` inside the folder, under the same name;
+- the original moves to `originals/`, so nothing is processed twice;
+- a file that can't be processed moves to `failed/`, next to a `.txt` saying why.
+
+Watched folders are remembered and start again the next time you open pdfmonster. For a
+machine without a screen, `pdfmonster watch` does the same from the command line.
+
 ## Using the CLI
 
 ```sh
@@ -128,6 +142,7 @@ pdfmonster hush report.pdf                        # just wipe the metadata
 pdfmonster peek scan.pdf                # → scan.searchable.pdf
 pdfmonster chain "munch > peek > squish" scan.pdf more.pdf   # → scan.chained.pdf, more.chained.pdf
 pdfmonster chain "peek > squish:strong > hush" scan.pdf -o send.pdf
+pdfmonster watch ~/Scans "munch > peek > squish"   # until Ctrl-C
 ```
 
 ```

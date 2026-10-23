@@ -1,6 +1,11 @@
 //! The chains screen: line monsters up, drop in PDFs, get them back done.
 
-use std::{path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use gpui::{
     ClickEvent, Context, ExternalPaths, FocusHandle, FontWeight, Image, PathPromptOptions, SharedString,
@@ -13,7 +18,11 @@ use super::{
 use crate::{
     chain::{self, Chain, Step},
     human_size, pdf, squish,
+    watch::{self, Done, Watch, Watcher},
 };
+
+/// How often watched folders are looked at.
+const POLL: Duration = Duration::from_secs(2);
 
 pub struct Chains {
     pub focus: FocusHandle,
@@ -22,21 +31,20 @@ pub struct Chains {
     /// Files that went through the chain, newest first.
     runs: Vec<Run>,
     running: usize,
+    watches: Vec<Watch>,
+    /// Per watched folder, which files have settled. Used off the UI thread.
+    watchers: Arc<Mutex<HashMap<PathBuf, Watcher>>>,
+    /// Files from watched folders that are being worked on right now.
+    in_flight: HashSet<PathBuf>,
     status: SharedString,
 }
 
 struct Run {
     input: PathBuf,
     chain: Chain,
+    /// Whether it came from a watched folder.
+    watched: bool,
     result: Option<anyhow::Result<Done>>,
-}
-
-struct Done {
-    output: PathBuf,
-    before: u64,
-    after: u64,
-    log: Vec<String>,
-    millis: u128,
 }
 
 fn kind(step: Step) -> Kind {
@@ -57,8 +65,117 @@ impl Chains {
             chain: Chain::classic(),
             runs: Vec::new(),
             running: 0,
+            watches: watch::load(),
+            watchers: Default::default(),
+            in_flight: HashSet::new(),
             status: "Line monsters up, then drop PDFs here. Each file is saved next to the original.".into(),
         }
+        .polling(cx)
+    }
+
+    /// Starts looking at watched folders, for as long as the app runs.
+    fn polling(self, cx: &mut Context<Self>) -> Self {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(POLL).await;
+                let Ok((watches, watchers)) = this.update(cx, |this, _| (this.watches.clone(), this.watchers.clone()))
+                else {
+                    break;
+                };
+                if watches.is_empty() {
+                    continue;
+                }
+                let ready = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let mut watchers = watchers.lock().unwrap();
+                        watchers.retain(|folder, _| watches.iter().any(|w| &w.folder == folder));
+                        watches
+                            .iter()
+                            .flat_map(|w| {
+                                let files = watchers.entry(w.folder.clone()).or_default().ready(&w.folder);
+                                files.into_iter().map(|f| (f, w.chain.clone()))
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .await;
+                if this.update(cx, |this, cx| this.process_watched(ready, cx)).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+        self
+    }
+
+    fn process_watched(&mut self, ready: Vec<(PathBuf, Chain)>, cx: &mut Context<Self>) {
+        for (input, chain) in ready {
+            if !self.in_flight.insert(input.clone()) {
+                continue;
+            }
+            self.runs.insert(0, Run { input: input.clone(), chain: chain.clone(), watched: true, result: None });
+            self.running += 1;
+            cx.spawn(async move |this, cx| {
+                let task_input = input.clone();
+                let processed = cx.background_executor().spawn(async move { watch::process(&task_input, &chain) }).await;
+                this.update(cx, |this, cx| {
+                    this.in_flight.remove(&input);
+                    this.finish(&input, processed, cx);
+                })
+                .ok();
+            })
+            .detach();
+        }
+        self.status = self.summary();
+        cx.notify();
+    }
+
+    fn finish(&mut self, input: &PathBuf, result: anyhow::Result<Done>, cx: &mut Context<Self>) {
+        self.running -= 1;
+        if let Some(run) = self.runs.iter_mut().find(|r| &r.input == input && r.result.is_none()) {
+            run.result = Some(result);
+        }
+        self.status = self.summary();
+        cx.notify();
+    }
+
+    fn watch_folder(&mut self, cx: &mut Context<Self>) {
+        if self.chain.0.is_empty() {
+            self.status = "Add a monster to the chain first.".into();
+            cx.notify();
+            return;
+        }
+        let folder = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Watch this folder".into()),
+        });
+        let chain = self.chain.clone();
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(dirs))) = folder.await else { return };
+            let Some(folder) = dirs.into_iter().next() else { return };
+            this.update(cx, |this, cx| {
+                this.watches.retain(|w| w.folder != folder);
+                this.watches.push(Watch { folder: folder.clone(), chain: chain.clone() });
+                this.status = match watch::save(&this.watches) {
+                    Ok(()) => format!("Watching {} with {chain}. Drop PDFs in and they'll land in {}/.", folder.display(), watch::DONE).into(),
+                    Err(err) => format!("Watching {}, but couldn't remember it for next time: {err:#}", folder.display()).into(),
+                };
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn unwatch(&mut self, ix: usize, cx: &mut Context<Self>) {
+        let gone = self.watches.remove(ix);
+        self.status = match watch::save(&self.watches) {
+            Ok(()) => format!("Stopped watching {}.", gone.folder.display()).into(),
+            Err(err) => format!("Stopped watching, but couldn't save that: {err:#}").into(),
+        };
+        cx.notify();
     }
 
     fn portrait(&self, kind: Kind) -> Arc<Image> {
@@ -74,7 +191,7 @@ impl Chains {
         }
         for input in paths.into_iter().filter(|p| is_pdf(p)) {
             let chain = self.chain.clone();
-            self.runs.insert(0, Run { input: input.clone(), chain: chain.clone(), result: None });
+            self.runs.insert(0, Run { input: input.clone(), chain: chain.clone(), watched: false, result: None });
             self.running += 1;
             cx.spawn(async move |this, cx| {
                 let task_input = input.clone();
@@ -96,15 +213,7 @@ impl Chains {
                         })
                     })
                     .await;
-                this.update(cx, |this, cx| {
-                    this.running -= 1;
-                    if let Some(run) = this.runs.iter_mut().find(|r| r.input == input && r.result.is_none()) {
-                        run.result = Some(result);
-                    }
-                    this.status = this.summary();
-                    cx.notify();
-                })
-                .ok();
+                this.update(cx, |this, cx| this.finish(&input, result, cx)).ok();
             })
             .detach();
         }
@@ -119,6 +228,12 @@ impl Chains {
         let done = self.runs.iter().filter(|r| matches!(r.result, Some(Ok(_)))).count();
         let failed = self.runs.iter().filter(|r| matches!(r.result, Some(Err(_)))).count();
         match (done, failed) {
+            (0, 0) if !self.watches.is_empty() => format!(
+                "Watching {} folder{}. Drop PDFs here, or into a watched folder.",
+                self.watches.len(),
+                plural(self.watches.len())
+            )
+            .into(),
             (0, 0) => "Line monsters up, then drop PDFs here. Each file is saved next to the original.".into(),
             (done, 0) => format!("{done} file{} done. Drop more any time.", plural(done)).into(),
             (done, failed) => format!("{done} done, {failed} failed.").into(),
@@ -200,7 +315,8 @@ impl Chains {
             Some(Err(err)) => (format!("{err:#}"), theme::PINK, Vec::new()),
             Some(Ok(done)) => (
                 format!(
-                    "→ {} · {} → {} · {} ms",
+                    "→ {}{} · {} → {} · {} ms",
+                    if run.watched { format!("{}/", watch::DONE) } else { String::new() },
                     file_name(&done.output),
                     human_size(done.before),
                     human_size(done.after),
@@ -225,7 +341,11 @@ impl Chains {
                     .child(div().font_weight(FontWeight::BOLD).child(file_name(&run.input)))
                     .child(div().text_color(rgb(color)).truncate().child(headline)),
             )
-            .child(div().text_xs().text_color(rgb(theme::MUTED)).child(run.chain.to_string()))
+            .child(div().text_xs().text_color(rgb(theme::MUTED)).child(if run.watched {
+                format!("{} · from a watched folder", run.chain)
+            } else {
+                run.chain.to_string()
+            }))
             .children(lines.into_iter().map(|l| div().text_sm().text_color(rgb(theme::MUTED)).child(l)))
             .into_any_element()
     }
@@ -263,6 +383,29 @@ impl Render for Chains {
                     .into_any_element()
             })
             .collect();
+        let watches: Vec<_> = self
+            .watches
+            .iter()
+            .enumerate()
+            .map(|(ix, w)| {
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .px_3()
+                    .py_2()
+                    .rounded_lg()
+                    .bg(rgb(theme::CARD))
+                    .child(div().size(px(8.)).rounded_full().bg(rgb(theme::MINT)))
+                    .child(div().flex_1().min_w_0().truncate().font_weight(FontWeight::BOLD).child(w.folder.display().to_string()))
+                    .child(div().text_color(rgb(theme::MUTED)).child(w.chain.to_string()))
+                    .child(
+                        button(("unwatch", ix), "Stop", false)
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.unwatch(ix, cx))),
+                    )
+                    .into_any_element()
+            })
+            .collect();
         let runs: Vec<_> = self.runs.iter().enumerate().map(|(ix, run)| self.render_run(ix, run)).collect();
         let heading = |text: &'static str| div().text_xs().font_weight(FontWeight::BOLD).text_color(rgb(theme::MUTED)).child(text);
 
@@ -290,6 +433,20 @@ impl Render for Chains {
                             },
                         )),
                     ),
+            )
+            .child(heading("WATCHED FOLDERS"))
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(theme::MUTED))
+                    .child("Every PDF that lands in a watched folder goes through its chain while pdfmonster is open. Results go to done/, originals to originals/."),
+            )
+            .child(div().flex().flex_col().gap_2().children(watches))
+            .child(
+                div().flex().child(
+                    button("watch", "Watch a folder with this chain…", false)
+                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.watch_folder(cx))),
+                ),
             )
             .child(heading("DROP PDFS ANYWHERE ON THIS SCREEN"))
             .when(runs.is_empty(), |d| {

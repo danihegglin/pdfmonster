@@ -90,6 +90,11 @@ pub fn run(initial: Vec<PathBuf>) {
                     active: None,
                     status: "Drop a PDF on a monster to feed it. Anywhere else: one file goes to Munch, several to Stitch.".into(),
                 };
+                // Watched folders keep working from the moment the app opens.
+                if !crate::watch::load().is_empty() {
+                    home.tools.push(Tool::new(Screen::Chains, cx));
+                    home.status = "Watching folders for new PDFs. See Chain them up.".into();
+                }
                 match initial.len() {
                     0 => window.focus(&home.focus),
                     n => home.feed(if n == 1 { Kind::Munch } else { Kind::Stitch }, initial, window, cx),
@@ -504,7 +509,7 @@ fn status_bar(status: SharedString, busy: bool, hint: Option<&'static str>) -> i
         .when_some(hint, |d, hint| d.child(div().text_color(rgb(theme::MUTED)).child(hint)))
 }
 
-fn button(id: &'static str, label: impl Into<SharedString>, primary: bool) -> Stateful<gpui::Div> {
+fn button(id: impl Into<gpui::ElementId>, label: impl Into<SharedString>, primary: bool) -> Stateful<gpui::Div> {
     let (bg, hover, fg) = if primary {
         (theme::ACCENT, theme::ACCENT_HOVER, 0xffffff)
     } else {
