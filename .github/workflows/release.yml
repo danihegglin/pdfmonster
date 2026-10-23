@@ -273,14 +273,48 @@ jobs:
       - name: Package
         run: |
           VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           NAME="pdfmonster-$VERSION-windows-${{ matrix.arch }}"
+          echo "STAGE=$NAME" >> "$GITHUB_ENV"
           mkdir -p dist "$NAME"
           cp target/${{ matrix.target }}/release/pdfmonster.exe README.md LICENSE "$NAME/"
           7z a "dist/$NAME.zip" "$NAME"
 
+      - name: Icon
+        run: |
+          python -m pip install --quiet resvg-py pillow
+          python packaging/windows/make-ico.py packaging/pdfmonster.svg "$STAGE/pdfmonster.ico"
+
+      - name: Installer (.exe)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "Installing Inno Setup failed" }
+          }
+          $numeric = ($env:VERSION -split '[-+]')[0]
+          & $iscc /Q "/DAppVersion=$env:VERSION" "/DNumericVersion=$numeric" "/DArch=${{ matrix.arch }}" `
+            "/DSourceDir=$PWD\$env:STAGE" "/DOutputDir=$PWD\dist" packaging\windows\pdfmonster.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+          Get-ChildItem dist
+
       - name: Smoke test
         if: matrix.arch == 'x86_64'
-        run: target/${{ matrix.target }}/release/pdfmonster.exe --help
+        shell: pwsh
+        run: |
+          # Piping makes PowerShell wait for the exe, which matters once it is a GUI-subsystem app.
+          & ./target/${{ matrix.target }}/release/pdfmonster.exe --help | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "pdfmonster.exe --help failed" }
+          # Silent per-user install, check the installed binary runs, then uninstall.
+          $setup = Get-Item "dist/pdfmonster-$env:VERSION-windows-x86_64-setup.exe"
+          $p = Start-Process $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Installer exited with $($p.ExitCode)" }
+          $app = "$env:LOCALAPPDATA\Programs\pdfmonster"
+          & "$app\pdfmonster.exe" --help | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "Installed pdfmonster.exe failed" }
+          $p = Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Uninstaller exited with $($p.ExitCode)" }
 
       - uses: actions/upload-artifact@v4
         with:
