@@ -158,7 +158,7 @@ Every tagged release (`v*`) is built by GitHub Actions and attached to the
 | Platform | Files |
 | --- | --- |
 | macOS (Apple silicon + Intel) | `.dmg`, `.app.zip`, CLI `.tar.gz` |
-| Windows (x86_64, ARM64) | `.zip` |
+| Windows (x86_64, ARM64) | installer `-setup.exe`, portable `.zip` |
 | Debian, Ubuntu, Mint, Pop!\_OS | `.deb` (x86_64, aarch64) |
 | Fedora, openSUSE, RHEL | `.rpm` (x86_64, aarch64) |
 | Arch, Manjaro, EndeavourOS | `.pkg.tar.zst` (`sudo pacman -U …`) |
