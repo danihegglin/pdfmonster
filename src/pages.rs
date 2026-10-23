@@ -62,6 +62,11 @@ pub fn set_pages(doc: &mut Document, pages: &[ObjectId]) -> Result<()> {
     Ok(())
 }
 
+/// Removes every object that is no longer reachable from the trailer.
+pub fn prune_unreachable(doc: &mut Document) {
+    prune(doc, &HashSet::new());
+}
+
 /// Removes every object that is no longer reachable from the trailer, after
 /// replacing references to `dropped` objects with null.
 fn prune(doc: &mut Document, dropped: &HashSet<ObjectId>) {

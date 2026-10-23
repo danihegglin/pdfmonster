@@ -76,7 +76,7 @@ impl Kind {
                 job: "Shrinks file sizes",
                 blurb: "Squeezes bloated PDFs down to something you can actually send.",
                 color: 0x7c5cff,
-                ready: false,
+                ready: true,
                 body: Body::Boxy,
                 eyes: 1,
                 mouth: Mouth::Grin,

@@ -59,6 +59,15 @@ picks a range), then **Save N pages** (<kbd>⌘S</kbd>) writes just those into a
 into single pages** writes one file per page (or per picked page) into a folder. Everything that
 only the left-out pages used is removed from the new file.
 
+### Squish: shrinking files
+
+Drop a PDF on Squish and it tries all three levels at once, so you can pick by size:
+**Light** (300 dpi, for printing), **Medium** (150 dpi, screen and email) and **Strong**
+(100 dpi, smallest). Squish works out how large each image is actually drawn on the page,
+scales oversized ones down to that resolution and re-encodes them as JPEG, but only keeps the new
+version when it's at least 10% smaller. It also compresses uncompressed streams, drops unused
+objects and writes compressed object streams. Masks, 1-bit and CMYK images are left alone.
+
 ## Using the CLI
 
 ```sh
@@ -70,6 +79,8 @@ pdfmonster snip scan.pdf 4-9            # → scan.p4-9.pdf
 pdfmonster snip scan.pdf 1-3 10-        # → scan.p1-3.pdf and scan.p10-12.pdf
 pdfmonster snip scan.pdf 3,1 -o two.pdf # pages 3 and 1, in that order
 pdfmonster snip scan.pdf --every 1      # one file per page
+pdfmonster squish big.pdf               # → big.squished.pdf (medium)
+pdfmonster squish big.pdf --strong -o small.pdf
 ```
 
 ```
