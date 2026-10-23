@@ -1,4 +1,5 @@
 mod app;
+mod chain;
 mod content;
 mod deskew;
 mod hush;
@@ -35,6 +36,11 @@ USAGE:
                                                shrink the file (default OUT: IN.squished.pdf)
     pdfmonster peek <IN.pdf> [-o OUT.pdf]      read scanned pages and make them searchable
                                                (default OUT: IN.searchable.pdf)
+    pdfmonster chain <STEPS> <IN.pdf>… [-o OUT.pdf]
+                                               run monsters one after the other, e.g.
+                                               \"munch > peek > squish\" (steps: munch, peek,
+                                               squish[:light|:strong], hush)
+                                               (default OUT: IN.chained.pdf)
 ";
 
 fn main() -> ExitCode {
@@ -44,13 +50,14 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             ExitCode::SUCCESS
         }
-        Some(cmd @ ("fix" | "stitch" | "snip" | "squish" | "hush" | "peek")) => {
+        Some(cmd @ ("fix" | "stitch" | "snip" | "squish" | "hush" | "peek" | "chain")) => {
             let result = match cmd {
                 "fix" => fix(&args[1..]),
                 "stitch" => stitch(&args[1..]),
                 "snip" => snip(&args[1..]),
                 "hush" => hush(&args[1..]),
                 "peek" => peek(&args[1..]),
+                "chain" => chain(&args[1..]),
                 _ => squish(&args[1..]),
             };
             match result {
@@ -284,6 +291,28 @@ fn peek(args: &[String]) -> anyhow::Result<()> {
         output.display(),
         start.elapsed().as_millis()
     );
+    Ok(())
+}
+
+fn chain(args: &[String]) -> anyhow::Result<()> {
+    let Some((steps, rest)) = args.split_first() else {
+        anyhow::bail!("which monsters? e.g. \"munch > peek > squish\"\n\n{USAGE}");
+    };
+    let chain = chain::Chain::parse(steps)?;
+    let (inputs, output) = inputs_and_output(rest)?;
+    anyhow::ensure!(!inputs.is_empty(), "missing input file\n\n{USAGE}");
+    anyhow::ensure!(output.is_none() || inputs.len() == 1, "-o only works with a single input");
+    for input in &inputs {
+        let start = Instant::now();
+        let out = output.clone().unwrap_or_else(|| chain::default_output(input));
+        let (bytes, log) = chain::run(pdf::open(input)?, &chain, &|_, _| {})?;
+        std::fs::write(&out, &bytes).map_err(|e| anyhow::anyhow!("could not write {}: {e}", out.display()))?;
+        println!("{}:", input.display());
+        for line in &log {
+            println!("    {line}");
+        }
+        println!("    → {} ({}) in {} ms", out.display(), human_size(bytes.len() as u64), start.elapsed().as_millis());
+    }
     Ok(())
 }
 
