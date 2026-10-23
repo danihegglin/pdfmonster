@@ -1,3 +1,7 @@
+// Release builds on Windows are GUI apps, so no console window opens behind the app.
+// The CLI reattaches to the terminal it was started from (see `attach_parent_console`).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod app;
 mod chain;
 mod content;
@@ -48,6 +52,7 @@ USAGE:
 ";
 
 fn main() -> ExitCode {
+    attach_parent_console();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("-h" | "--help") => {
@@ -79,6 +84,29 @@ fn main() -> ExitCode {
         }
     }
 }
+
+/// A GUI-subsystem exe gets no console, so `--help` and the subcommands would print nothing
+/// when run from a terminal. Attach to the parent's console unless output is already redirected.
+#[cfg(windows)]
+fn attach_parent_console() {
+    use std::ffi::c_void;
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
+    unsafe extern "system" {
+        fn AttachConsole(process_id: u32) -> i32;
+        fn GetStdHandle(std_handle: u32) -> *mut c_void;
+    }
+    // SAFETY: plain Win32 calls without pointer arguments.
+    unsafe {
+        let out = GetStdHandle(STD_OUTPUT_HANDLE);
+        if out.is_null() || out as isize == -1 {
+            AttachConsole(ATTACH_PARENT_PROCESS);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn attach_parent_console() {}
 
 /// Splits a subcommand's arguments into inputs and the `-o` output.
 fn inputs_and_output(args: &[String]) -> anyhow::Result<(Vec<PathBuf>, Option<PathBuf>)> {
