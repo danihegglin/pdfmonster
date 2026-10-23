@@ -1,0 +1,116 @@
+name: Auto tag
+
+# Tags a new version whenever code lands on main, then starts the Release workflow for that tag.
+#   - The bump is a patch (v0.2.1 -> v0.2.2) by default.
+#   - Put `#minor`, `#major` or `#skip-release` in the PR title or commit message, or label the
+#     PR `release:minor`, `release:major` or `release:skip`, to change that.
+#   - Run it manually to pick the bump, or to tag an exact version such as `1.0.0-beta.1`.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "models/**"
+      - "assets/**"
+      - "packaging/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version part to bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: Exact version to tag instead (e.g. 1.0.0 or 1.0.0-beta.1)
+        required: false
+
+# One at a time, so two quick merges can't pick the same version.
+concurrency:
+  group: auto-tag
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pick the next version
+        id: next
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUMP: ${{ inputs.bump }}
+          EXACT: ${{ inputs.version }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          if [ -n "$(git tag --points-at HEAD -l 'v*')" ]; then
+            echo "HEAD is already tagged: $(git tag --points-at HEAD -l 'v*' | tr '\n' ' ')"
+            exit 0
+          fi
+
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            # Read the bump from the merged PR's labels and title, then from the commit message.
+            PR=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+              --jq '[.[] | select(.merged_at != null)][0] // empty | "\(.title)\n\([.labels[].name] | join(" "))"' || true)
+            TEXT="$PR"$'\n'"$MESSAGE"
+            BUMP=patch
+            if grep -qiE '#skip-release|release:skip|\[skip release\]' <<<"$TEXT"; then
+              echo "Release skipped by request."
+              exit 0
+            elif grep -qiE '#major|release:major' <<<"$TEXT"; then BUMP=major
+            elif grep -qiE '#minor|release:minor' <<<"$TEXT"; then BUMP=minor
+            fi
+          fi
+
+          if [ -n "${EXACT:-}" ]; then
+            NEXT="${EXACT#v}"
+            [[ "$NEXT" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::$EXACT is not a version"; exit 1; }
+          else
+            # Latest stable tag, so v0.2 counts as 0.2.0. Pre-release tags are ignored.
+            LATEST=$(git tag -l 'v*' | sed 's/^v//' | grep -E '^[0-9]+(\.[0-9]+){0,2}$' \
+              | awk -F. '{ printf "%d.%d.%d\n", $1, $2, $3 }' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+            if [ -z "$LATEST" ]; then
+              LATEST=$(sed -n 's/^version = "\([0-9.]*\).*"/\1/p' Cargo.toml | head -1)
+              NEXT="$LATEST"
+            else
+              IFS=. read -r MA MI PA <<<"$LATEST"
+              case "$BUMP" in
+                major) NEXT="$((MA + 1)).0.0" ;;
+                minor) NEXT="$MA.$((MI + 1)).0" ;;
+                *) NEXT="$MA.$MI.$((PA + 1))" ;;
+              esac
+            fi
+          fi
+
+          if git rev-parse -q --verify "refs/tags/v$NEXT" >/dev/null; then
+            echo "::error::Tag v$NEXT already exists"
+            exit 1
+          fi
+          echo "Latest release: ${LATEST:-none}, bump: ${BUMP:-exact}, next: v$NEXT"
+          echo "tag=v$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and start the release
+        if: steps.next.outputs.tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "pdfmonster ${TAG#v}"
+          git push origin "refs/tags/$TAG"
+          # Tags pushed with GITHUB_TOKEN don't trigger other workflows, so start the release
+          # explicitly on the tag. It runs exactly as if the tag had been pushed by hand.
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
+          echo "Tagged $TAG and started the Release workflow." >> "$GITHUB_STEP_SUMMARY"
