@@ -109,7 +109,7 @@ impl Kind {
                 job: "Makes scans searchable",
                 blurb: "Reads every word on your scans so you can search, select and copy them.",
                 color: 0x2bb3ff,
-                ready: false,
+                ready: true,
                 body: Body::Round,
                 eyes: 1,
                 mouth: Mouth::O,

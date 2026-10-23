@@ -4,6 +4,7 @@ mod deskew;
 mod hush;
 mod pages;
 mod pdf;
+mod peek;
 mod render;
 mod snip;
 mod squish;
@@ -32,6 +33,8 @@ USAGE:
                                                (default OUT: IN.hushed.pdf)
     pdfmonster squish <IN.pdf> [--light|--strong] [-o OUT.pdf]
                                                shrink the file (default OUT: IN.squished.pdf)
+    pdfmonster peek <IN.pdf> [-o OUT.pdf]      read scanned pages and make them searchable
+                                               (default OUT: IN.searchable.pdf)
 ";
 
 fn main() -> ExitCode {
@@ -41,12 +44,13 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             ExitCode::SUCCESS
         }
-        Some(cmd @ ("fix" | "stitch" | "snip" | "squish" | "hush")) => {
+        Some(cmd @ ("fix" | "stitch" | "snip" | "squish" | "hush" | "peek")) => {
             let result = match cmd {
                 "fix" => fix(&args[1..]),
                 "stitch" => stitch(&args[1..]),
                 "snip" => snip(&args[1..]),
                 "hush" => hush(&args[1..]),
+                "peek" => peek(&args[1..]),
                 _ => squish(&args[1..]),
             };
             match result {
@@ -239,6 +243,46 @@ fn squish(args: &[String]) -> anyhow::Result<()> {
         output.display(),
         start.elapsed().as_millis(),
         level = level.label(),
+    );
+    Ok(())
+}
+
+fn peek(args: &[String]) -> anyhow::Result<()> {
+    let (inputs, output) = inputs_and_output(args)?;
+    let input = match &inputs[..] {
+        [input] => input.clone(),
+        [] => anyhow::bail!("missing input file\n\n{USAGE}"),
+        [_, extra, ..] => anyhow::bail!("unexpected argument {extra:?}\n\n{USAGE}"),
+    };
+    let output = output.unwrap_or_else(|| peek::default_output(&input));
+
+    let start = Instant::now();
+    let data = std::sync::Arc::new(std::fs::read(&input)?);
+    let mut doc = lopdf::Document::load_mem(&data)
+        .map_err(|e| anyhow::anyhow!("could not read {}: {e}", input.display()))?;
+    let pages = peek::read(&doc, data, &|| {})?;
+    for (number, page) in (1..).zip(&pages) {
+        match page {
+            peek::PageText::HadText => println!("page {number:>4}: already has text"),
+            peek::PageText::Unreadable => println!("page {number:>4}: couldn't be drawn, skipped"),
+            peek::PageText::Read(lines) => {
+                let words: usize = lines.iter().map(|l| l.words.len()).sum();
+                let first = lines.first().map(peek::Line::text).unwrap_or_default();
+                println!("page {number:>4}: {words} words  {first:.60}");
+            }
+        }
+    }
+    let report = peek::add_text(&mut doc, &pages)?;
+    doc.save(&output)
+        .map_err(|e| anyhow::anyhow!("could not write {}: {e}", output.display()))?;
+    println!(
+        "read {} page{} ({} words, {} already had text) → {} in {} ms",
+        report.read,
+        if report.read == 1 { "" } else { "s" },
+        report.words,
+        report.had_text,
+        output.display(),
+        start.elapsed().as_millis()
     );
     Ok(())
 }

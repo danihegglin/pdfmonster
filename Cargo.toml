@@ -13,6 +13,8 @@ gpui = { version = "0.2.2", features = ["runtime_shaders"] }
 hayro = { version = "0.8", features = ["embed-fonts"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 lopdf = "0.38"
+ocrs = { version = "0.13.1", default-features = false, features = ["rten"] }
+rten = { version = "0.26", default-features = false, features = ["rten_format"] }
 rayon = "1"
 
 [dev-dependencies]
