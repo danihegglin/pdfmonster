@@ -40,12 +40,16 @@ pub fn page_geometry(data: Arc<Vec<u8>>) -> Vec<Option<([f64; 6], (f32, f32))>> 
 }
 
 fn render_page(pdf: &Pdf, ix: usize, max_side: f32) -> Option<RgbaImage> {
-    let page = pdf.pages().get(ix)?;
-    let (w, h) = page.render_dimensions();
+    let (w, h) = pdf.pages().get(ix)?.render_dimensions();
     if w <= 0.0 || h <= 0.0 {
         return None;
     }
-    let scale = max_side / w.max(h);
+    render_at(pdf, ix, max_side / w.max(h))
+}
+
+/// Renders page `ix` at `scale` pixels per point.
+pub fn render_at(pdf: &Pdf, ix: usize, scale: f32) -> Option<RgbaImage> {
+    let page = pdf.pages().get(ix)?;
     let pixmap = hayro::render(
         page,
         &RenderCache::new(),

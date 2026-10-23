@@ -88,6 +88,19 @@ Rewriting the file also drops the edit history of incrementally saved PDFs.
 
 Text search needs real text. For scans, run Peek first.
 
+### Peek: making scans searchable
+
+Drop a scan on Peek and it reads every page that doesn't have text yet, then shows you what it
+read. **Save searchable** writes the words back onto the pages as invisible text, each one laid
+over the word it came from, so you can search, select and copy while the page looks exactly the
+same. Pages that already have text are left alone, so running Peek twice does nothing the
+second time.
+
+Peek uses [ocrs](https://github.com/robertknight/ocrs), a pure-Rust OCR engine. Its two models
+(about 12 MB) are built into pdfmonster, so reading works offline and your scans never leave the
+computer. It reads printed Latin-script text (English and other languages without many accents
+work best); handwriting and other scripts aren't supported.
+
 ## Using the CLI
 
 ```sh
@@ -104,6 +117,7 @@ pdfmonster squish big.pdf --strong -o small.pdf
 pdfmonster hush contract.pdf --text "Jane Example" --text "CH93 0076 2011 6238 5295 7"
 pdfmonster hush scan.pdf --box 1:72,700,300,730   # page:x0,y0,x1,y1 in points from bottom left
 pdfmonster hush report.pdf                        # just wipe the metadata
+pdfmonster peek scan.pdf                # → scan.searchable.pdf
 ```
 
 ```

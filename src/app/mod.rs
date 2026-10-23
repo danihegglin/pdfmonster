@@ -3,6 +3,7 @@
 mod hush;
 mod munch;
 mod pack;
+mod peek;
 mod snip;
 mod squish;
 mod stitch;
@@ -106,6 +107,7 @@ enum Tool {
     Snip(Entity<snip::Snip>),
     Squish(Entity<squish::Squish>),
     Hush(Entity<hush::Hush>),
+    Peek(Entity<peek::Peek>),
 }
 
 impl Tool {
@@ -116,7 +118,7 @@ impl Tool {
             Kind::Snip => Some(Tool::Snip(cx.new(snip::Snip::new))),
             Kind::Squish => Some(Tool::Squish(cx.new(squish::Squish::new))),
             Kind::Hush => Some(Tool::Hush(cx.new(hush::Hush::new))),
-            _ => None,
+            Kind::Peek => Some(Tool::Peek(cx.new(peek::Peek::new))),
         }
     }
 
@@ -127,6 +129,7 @@ impl Tool {
             Tool::Snip(_) => Kind::Snip,
             Tool::Squish(_) => Kind::Squish,
             Tool::Hush(_) => Kind::Hush,
+            Tool::Peek(_) => Kind::Peek,
         }
     }
 
@@ -153,6 +156,11 @@ impl Tool {
                     view.load(path, cx);
                 }
             }),
+            Tool::Peek(view) => view.update(cx, |view, cx| {
+                if let Some(path) = paths.into_iter().next() {
+                    view.load(path, cx);
+                }
+            }),
         }
     }
 
@@ -163,6 +171,7 @@ impl Tool {
             Tool::Snip(view) => window.focus(&view.read(cx).focus),
             Tool::Squish(view) => window.focus(&view.read(cx).focus),
             Tool::Hush(view) => window.focus(&view.read(cx).focus),
+            Tool::Peek(view) => window.focus(&view.read(cx).focus),
         }
     }
 
@@ -173,6 +182,7 @@ impl Tool {
             Tool::Snip(view) => view.clone().into(),
             Tool::Squish(view) => view.clone().into(),
             Tool::Hush(view) => view.clone().into(),
+            Tool::Peek(view) => view.clone().into(),
         }
     }
 }
